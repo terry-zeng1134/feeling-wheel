@@ -1,0 +1,849 @@
+<title>Feeling Wheel — Interactive Mockup</title>
+
+<style>
+  :root {
+    color-scheme: light;
+    --surface-0: #f4f3f0;
+    --surface-1: #fcfcfb;
+    --surface-2: #eceae5;
+    --line: #dbd8d1;
+    --line-soft: #e6e3dd;
+    --ink-1: #16150f;
+    --ink-2: #56544b;
+    --ink-3: #85827a;
+    --hub: #ffffff;
+
+    --peaceful: #1baf7a;
+    --joyful:   #eda100;
+    --scared:   #e87ba4;
+    --sad:      #2a78d6;
+    --mad:      #e34948;
+    --powerful: #4a3aa7;
+
+    --r: 14px;
+    --ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --surface-0: #131311;
+      --surface-1: #1d1d1a;
+      --surface-2: #272724;
+      --line: #35352f;
+      --line-soft: #2c2c28;
+      --ink-1: #f6f5ef;
+      --ink-2: #b3b1a6;
+      --ink-3: #807e74;
+      --hub: #2b2b27;
+
+      --peaceful: #199e70;
+      --joyful:   #c98500;
+      --scared:   #d55181;
+      --sad:      #3987e5;
+      --mad:      #e66767;
+      --powerful: #9085e9;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-0: #131311;
+    --surface-1: #1d1d1a;
+    --surface-2: #272724;
+    --line: #35352f;
+    --line-soft: #2c2c28;
+    --ink-1: #f6f5ef;
+    --ink-2: #b3b1a6;
+    --ink-3: #807e74;
+    --hub: #2b2b27;
+
+    --peaceful: #199e70;
+    --joyful:   #c98500;
+    --scared:   #d55181;
+    --sad:      #2a78d6;
+    --mad:      #e66767;
+    --powerful: #9085e9;
+  }
+  :root[data-theme="dark"] { --sad: #3987e5; }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--surface-0);
+    color: var(--ink-1);
+    font-family: var(--ui);
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 48px 24px 96px;
+    display: flex;
+    flex-direction: column;
+    gap: 44px;
+  }
+
+  header.masthead { display: flex; flex-direction: column; gap: 10px; max-width: 62ch; }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+
+  h1 {
+    margin: 0;
+    font-size: clamp(28px, 4vw, 40px);
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+    text-wrap: balance;
+  }
+
+  .lede { margin: 0; color: var(--ink-2); font-size: 16px; }
+
+  .note {
+    border-left: 2px solid var(--line);
+    padding: 2px 0 2px 14px;
+    color: var(--ink-3);
+    font-size: 13.5px;
+    max-width: 68ch;
+  }
+
+  /* ── phone frames ─────────────────────────────────────── */
+  .decks { display: flex; flex-wrap: wrap; gap: 32px; align-items: flex-start; }
+
+  .deck { display: flex; flex-direction: column; gap: 12px; flex: 0 0 auto; }
+
+  .deck-label {
+    display: flex; align-items: baseline; gap: 8px;
+    font-family: var(--mono); font-size: 11px;
+    letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3);
+  }
+  .deck-label b { color: var(--ink-1); font-weight: 600; letter-spacing: 0.06em; }
+
+  .phone {
+    width: 300px;
+    height: 604px;
+    border-radius: 30px;
+    background: var(--surface-1);
+    border: 1px solid var(--line);
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .statusbar {
+    display: flex; justify-content: space-between;
+    font-family: var(--mono); font-size: 10px; color: var(--ink-3);
+    padding: 0 4px;
+  }
+
+  /* ── breadcrumb ───────────────────────────────────────── */
+  .crumbs {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 4px;
+    min-height: 24px; font-size: 12.5px;
+  }
+  .crumb {
+    background: none; border: 0; padding: 2px 6px; cursor: pointer;
+    font: inherit; color: var(--ink-2); border-radius: 6px;
+  }
+  .crumb:hover { background: var(--surface-2); color: var(--ink-1); }
+  .crumb-sep { color: var(--ink-3); font-size: 11px; }
+  .crumbs .now { color: var(--ink-1); font-weight: 600; }
+
+  /* ── wheel ────────────────────────────────────────────── */
+  .wheel-wrap { display: grid; place-items: center; flex: 1; }
+  svg.wheel { width: 262px; height: 262px; display: block; overflow: visible; }
+
+  .wedge {
+    cursor: pointer;
+    transition: opacity .16s ease, transform .18s ease;
+    transform-origin: 131px 131px;
+  }
+  .wedge:hover { opacity: .82; }
+  .wedge:focus-visible { outline: 2px solid var(--ink-1); outline-offset: 2px; }
+  .wedge-label {
+    font-size: 10.5px; font-weight: 600; letter-spacing: .01em;
+    pointer-events: none; fill: #fff;
+  }
+  .wedge-label.dark-ink { fill: #16150f; }
+  .ext-dot { pointer-events: none; }
+
+  .hub-btn { cursor: pointer; }
+  .hub-btn:focus-visible { outline: 2px solid var(--ink-1); outline-offset: 3px; border-radius: 50%; }
+  .hub-word {
+    font-size: 12.5px; font-weight: 650; fill: var(--ink-1);
+    text-anchor: middle; pointer-events: none;
+  }
+  .hub-verb {
+    font-family: var(--mono); font-size: 8.5px; letter-spacing: .12em;
+    fill: var(--ink-3); text-anchor: middle; pointer-events: none;
+    text-transform: uppercase;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .wedge { transition: none; }
+  }
+
+  /* ── chips / search ───────────────────────────────────── */
+  .search {
+    width: 100%; padding: 8px 11px; border-radius: 10px;
+    border: 1px solid var(--line); background: var(--surface-2);
+    color: var(--ink-1); font: inherit; font-size: 13px;
+  }
+  .search::placeholder { color: var(--ink-3); }
+  .chips { display: flex; flex-wrap: wrap; gap: 5px; }
+  .chip {
+    font-size: 11.5px; padding: 3px 9px; border-radius: 999px;
+    border: 1px solid var(--line); background: var(--surface-2);
+    color: var(--ink-2); cursor: pointer; font-family: var(--ui);
+    display: inline-flex; align-items: center; gap: 5px;
+  }
+  .chip:hover { color: var(--ink-1); border-color: var(--ink-3); }
+  .swatch { width: 7px; height: 7px; border-radius: 2px; flex: 0 0 auto; }
+
+  /* ── detail screen ────────────────────────────────────── */
+  .detail { display: flex; flex-direction: column; gap: 14px; flex: 1; overflow-y: auto; }
+  .picked { display: flex; flex-direction: column; gap: 5px; }
+  .picked-path {
+    font-family: var(--mono); font-size: 10.5px; color: var(--ink-3);
+    letter-spacing: .04em;
+  }
+  .picked-word {
+    font-size: 27px; letter-spacing: -.02em; line-height: 1.1; font-weight: 600;
+  }
+  .cite {
+    font-family: var(--mono); font-size: 9.5px; color: var(--ink-3);
+    border: 1px dashed var(--line); border-radius: 5px;
+    padding: 3px 6px; display: inline-block; width: fit-content;
+  }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field > label {
+    font-family: var(--mono); font-size: 10px; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--ink-3);
+  }
+  .steps { display: flex; gap: 5px; }
+  .step {
+    flex: 1; height: 34px; border-radius: 8px; cursor: pointer;
+    border: 1px solid var(--line); background: var(--surface-2);
+    color: var(--ink-3); font: inherit; font-size: 12px; font-variant-numeric: tabular-nums;
+  }
+  .step[aria-pressed="true"] { color: #fff; border-color: transparent; font-weight: 650; }
+  .step:focus-visible { outline: 2px solid var(--ink-1); outline-offset: 2px; }
+  textarea.note {
+    border: 1px solid var(--line); background: var(--surface-2); border-radius: 10px;
+    padding: 8px 10px; font: inherit; font-size: 13px; color: var(--ink-1);
+    resize: none; min-height: 62px;
+  }
+  .save {
+    margin-top: auto; padding: 12px; border-radius: 12px; border: 0;
+    background: var(--ink-1); color: var(--surface-1);
+    font: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+  .suggests { display: flex; gap: 5px; flex-wrap: wrap; }
+
+  /* ── month ────────────────────────────────────────────── */
+  .month-head {
+    display: flex; justify-content: space-between; align-items: baseline;
+  }
+  .month-title { font-size: 15px; font-weight: 650; letter-spacing: -.01em; }
+  .keyglyph { display: flex; align-items: center; gap: 7px; }
+  .keyglyph .legend-txt {
+    font-family: var(--mono); font-size: 9px; color: var(--ink-3);
+    letter-spacing: .08em; line-height: 1.35;
+  }
+  .dow {
+    display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px;
+    font-family: var(--mono); font-size: 9px; color: var(--ink-3); text-align: center;
+  }
+  .grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+  .cell {
+    aspect-ratio: 1; border: 0; background: none; padding: 0;
+    display: grid; place-items: center; cursor: pointer; border-radius: 7px;
+  }
+  .cell:hover { background: var(--surface-2); }
+  .cell:focus-visible { outline: 2px solid var(--ink-1); outline-offset: -1px; }
+  .cell.out { opacity: .18; pointer-events: none; }
+  .cell.today svg .guide { stroke-opacity: .5; }
+
+  .dayout {
+    border-top: 1px solid var(--line-soft); padding-top: 9px;
+    display: flex; flex-direction: column; gap: 6px; min-height: 116px;
+  }
+  .dayout-date {
+    font-family: var(--mono); font-size: 10px; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--ink-3);
+  }
+  .logrow { display: flex; align-items: center; gap: 7px; font-size: 12.5px; }
+  .logrow .bar { display: flex; gap: 2px; }
+  .logrow .pip { width: 4px; height: 11px; border-radius: 1px; background: var(--line); }
+  .logrow .name { flex: 1; }
+  .logrow .trig { color: var(--ink-3); font-size: 11px; }
+  .empty-day { color: var(--ink-3); font-size: 12px; }
+
+  /* ── palette table ────────────────────────────────────── */
+  .scroller { overflow-x: auto; }
+  table {
+    border-collapse: collapse; font-size: 13px; min-width: 520px; width: 100%;
+  }
+  th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line-soft); }
+  th {
+    font-family: var(--mono); font-size: 10px; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--ink-3); font-weight: 500;
+  }
+  td.hex { font-family: var(--mono); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .dot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 8px; vertical-align: -1px; }
+
+  h2 {
+    margin: 0; font-size: 19px; letter-spacing: -.015em;
+    display: flex; align-items: baseline; gap: 10px;
+  }
+  h2 span {
+    font-family: var(--mono); font-size: 10px; letter-spacing: .12em;
+    color: var(--ink-3); text-transform: uppercase; font-weight: 400;
+  }
+  section { display: flex; flex-direction: column; gap: 16px; }
+
+  @media (max-width: 700px) {
+    .page { padding: 32px 16px 64px; }
+    .phone { width: 100%; max-width: 320px; }
+  }
+</style>
+
+<div class="page">
+
+  <header class="masthead">
+    <div class="eyebrow">Mockup · 2 Aug 2026</div>
+    <h1>Feeling Wheel</h1>
+    <p class="lede">
+      Three live screens from the spec: the layer-by-layer capture wheel, the entry
+      detail, and the month of radial day glyphs. Everything below is interactive —
+      tap the wedges, tap the hub, tap a day.
+    </p>
+    <p class="note">
+      Vocabulary here is illustrative so the drill-down is demonstrable. The real tree is
+      transcribed from Willcox (1982) in Task 2 of the plan, with the cited ring-4
+      extension in Task 4. Colours and angles, however, are final — they came out of the
+      validated search, not out of taste.
+    </p>
+  </header>
+
+  <section>
+    <h2>Screens <span>tap to drive</span></h2>
+    <div class="decks">
+
+      <div class="deck">
+        <div class="deck-label"><b>1 · Capture</b> wedges descend, hub commits</div>
+        <div class="phone">
+          <div class="statusbar"><span>9:41</span><span>Feeling Wheel</span></div>
+          <input class="search" id="search" placeholder="Search a feeling…" aria-label="Search a feeling" />
+          <div class="chips" id="recents"></div>
+          <nav class="crumbs" id="crumbs" aria-label="Wheel position"></nav>
+          <div class="wheel-wrap"><svg class="wheel" id="wheel" viewBox="0 0 262 262" role="application" aria-label="Feeling wheel"></svg></div>
+        </div>
+      </div>
+
+      <div class="deck">
+        <div class="deck-label"><b>2 · Detail</b> intensity, trigger, note</div>
+        <div class="phone">
+          <div class="statusbar"><span>9:41</span><span id="d-ring">Ring 3</span></div>
+          <div class="detail">
+            <div class="picked">
+              <div class="picked-path" id="d-path">mad › hurt</div>
+              <div class="picked-word" id="d-word">embarrassed</div>
+              <div class="cite" id="d-cite">Willcox 1982 · ring 3</div>
+            </div>
+            <div class="field">
+              <label id="lab-int">Intensity</label>
+              <div class="steps" id="steps" role="group" aria-labelledby="lab-int"></div>
+            </div>
+            <div class="field">
+              <label for="trigger">Trigger</label>
+              <input class="search" id="trigger" placeholder="what happened" value="standup" />
+              <div class="suggests" id="suggests"></div>
+            </div>
+            <div class="field">
+              <label for="note">Note</label>
+              <textarea class="note" id="note" placeholder="optional">said the wrong thing and then kept talking</textarea>
+            </div>
+            <button class="save" id="save">Save entry</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="deck">
+        <div class="deck-label"><b>3 · Month</b> one glyph per day</div>
+        <div class="phone">
+          <div class="statusbar"><span>9:41</span><span>82 entries</span></div>
+          <div class="month-head">
+            <div class="month-title">August 2026</div>
+            <div class="keyglyph">
+              <svg width="30" height="30" viewBox="0 0 30 30" id="keyglyph" role="img" aria-label="Key: family positions"></svg>
+              <div class="legend-txt">up = positive<br>down = negative</div>
+            </div>
+          </div>
+          <div class="dow"><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span></div>
+          <div class="grid" id="grid"></div>
+          <div class="dayout" id="dayout"></div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <section>
+    <h2>Palette <span>validated, not chosen by eye</span></h2>
+    <p class="note">
+      Exhaustive search over hue assignments, gated on OKLab separation for the six
+      cyclically-adjacent pairs — the only pairs that ever touch, because the angles are
+      fixed. Worst adjacent pair: CVD ΔE 8.4 (target 8.0), normal-vision ΔE 19.3 (floor
+      15.0), in both themes. Orange is absent because it cannot sit beside red or yellow,
+      and in this cycle it always would.
+    </p>
+    <div class="scroller">
+      <table>
+        <thead>
+          <tr><th>Family</th><th>Angle</th><th>Half</th><th>Light</th><th>Dark</th></tr>
+        </thead>
+        <tbody id="pal"></tbody>
+      </table>
+    </div>
+  </section>
+
+</div>
+
+<script type="module">
+  const FAMILIES = ["peaceful", "joyful", "scared", "sad", "mad", "powerful"];
+  const ANGLE = { peaceful: 0, joyful: 60, scared: 120, sad: 180, mad: 240, powerful: 300 };
+  const HEX = {
+    peaceful: ["#1baf7a", "#199e70"],
+    joyful:   ["#eda100", "#c98500"],
+    scared:   ["#e87ba4", "#d55181"],
+    sad:      ["#2a78d6", "#3987e5"],
+    mad:      ["#e34948", "#e66767"],
+    powerful: ["#4a3aa7", "#9085e9"],
+  };
+  // Light-mode hues needing dark ink on top for label contrast.
+  const DARK_INK = new Set(["joyful", "scared", "peaceful"]);
+
+  // Illustrative tree — real one is transcribed in plan Task 2.
+  const TREE = {
+    mad: {
+      hurt: ["embarrassed", "devastated"], hostile: ["irritated", "frustrated"],
+      angry: ["furious", "provoked"], rage: ["hateful", "violated"],
+      exasperated: ["agitated", "indignant"], critical: ["skeptical", "dismissive"],
+    },
+    sad: {
+      lonely: ["isolated", "abandoned"], depressed: ["empty", "inferior"],
+      guilty: ["ashamed", "remorseful"], despair: ["powerless", "grieving"],
+      let_down: ["disappointed", "dismayed"], bored: ["apathetic", "restless"],
+    },
+    scared: {
+      anxious: ["overwhelmed", "worried"], insecure: ["inadequate", "small"],
+      rejected: ["excluded", "dismissed"], confused: ["bewildered", "adrift"],
+      helpless: ["frightened", "exposed"], submissive: ["worthless", "insignificant"],
+    },
+    joyful: {
+      excited: ["eager", "thrilled"], sensuous: ["playful", "alive"],
+      energetic: ["animated", "spirited"], cheerful: ["content", "delighted"],
+      creative: ["curious", "inspired"], hopeful: ["optimistic", "reassured"],
+    },
+    powerful: {
+      proud: ["accomplished", "worthwhile"], respected: ["valued", "admired"],
+      appreciated: ["recognised", "seen"], faithful: ["committed", "loyal"],
+      important: ["needed", "capable"], confident: ["secure", "assertive"],
+    },
+    peaceful: {
+      content: ["satisfied", "at ease"], thoughtful: ["reflective", "pensive"],
+      intimate: ["close", "connected"], loving: ["tender", "warm"],
+      trusting: ["serene", "unhurried"], nurturing: ["compassionate", "generous"],
+    },
+  };
+  // Ring 4 — cited extension, partial by design.
+  const EXT = {
+    embarrassed: [["mortified", "Shaver 1987"], ["humiliated", "Shaver 1987"]],
+    overwhelmed: [["dread", "Cowen & Keltner 2017"]],
+    lonely: [], isolated: [["forsaken", "Shaver 1987"]],
+    proud: [["triumphant", "Cowen & Keltner 2017"]],
+    content: [["serene", "Cowen & Keltner 2017"]],
+  };
+
+  const isDark = () => {
+    const t = document.documentElement.getAttribute("data-theme");
+    if (t === "dark") return true;
+    if (t === "light") return false;
+    return matchMedia("(prefers-color-scheme: dark)").matches;
+  };
+  const col = (fam) => HEX[fam][isDark() ? 1 : 0];
+
+  const NS = "http://www.w3.org/2000/svg";
+  const mk = (n, attrs = {}) => {
+    const el = document.createElementNS(NS, n);
+    for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+    return el;
+  };
+  const polar = (cx, cy, r, deg) => {
+    const rad = ((deg - 90) * Math.PI) / 180;
+    return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
+  };
+  const arcPath = (cx, cy, ri, ro, a0, a1) => {
+    const lg = Math.abs(a1 - a0) > 180 ? 1 : 0;
+    const o0 = polar(cx, cy, ro, a0), o1 = polar(cx, cy, ro, a1);
+    const i1 = polar(cx, cy, ri, a1), i0 = polar(cx, cy, ri, a0);
+    return `M ${o0.x} ${o0.y} A ${ro} ${ro} 0 ${lg} 1 ${o1.x} ${o1.y}`
+         + ` L ${i1.x} ${i1.y} A ${ri} ${ri} 0 ${lg} 0 ${i0.x} ${i0.y} Z`;
+  };
+  const fanAngles = (c, span, n) => {
+    if (n <= 1) return [c];
+    const usable = span * 0.8, step = usable / (n - 1);
+    return Array.from({ length: n }, (_, i) => c - usable / 2 + i * step);
+  };
+
+  /* ── node helpers over the illustrative tree ───────────── */
+  function childrenOf(path) {
+    if (path.length === 0) return FAMILIES.slice();
+    if (path.length === 1) return Object.keys(TREE[path[0]]);
+    if (path.length === 2) return TREE[path[0]][path[1]].slice();
+    if (path.length === 3) return (EXT[path[2]] ?? []).map(([w]) => w);
+    return [];
+  }
+  const famOf = (path) => path[0];
+  const pretty = (s) => s.replace(/_/g, " ");
+  const citeOf = (path) => {
+    if (path.length < 4) return `Willcox 1982 · ring ${path.length}`;
+    const row = (EXT[path[2]] ?? []).find(([w]) => w === path[3]);
+    return `${row ? row[1] : "extension"} · ring 4 · extension`;
+  };
+
+  /* ── 1 · the wheel ─────────────────────────────────────── */
+  const wheelEl = document.getElementById("wheel");
+  const crumbsEl = document.getElementById("crumbs");
+  let path = [];
+
+  function drawWheel() {
+    wheelEl.replaceChildren();
+    const C = 131, ri = 46, ro = 126;
+    const kids = childrenOf(path);
+    const fam = path.length ? famOf(path) : null;
+
+    kids.forEach((kid, i) => {
+      const n = kids.length;
+      const span = 360 / n;
+      // At the root, each family sits at its fixed angle. Deeper, children fill the ring.
+      const centre = path.length === 0 ? ANGLE[kid] : i * span;
+      const a0 = centre - span / 2, a1 = centre + span / 2;
+      const thisFam = fam ?? kid;
+      const g = mk("g", { class: "wedge", role: "button", tabindex: "0",
+                          "aria-label": `${pretty(kid)}, ${childrenOf([...path, kid]).length ? "open" : "log"}` });
+      g.appendChild(mk("path", {
+        d: arcPath(C, C, ri, ro, a0 + 0.9, a1 - 0.9),
+        fill: col(thisFam), stroke: "var(--surface-1)", "stroke-width": "2",
+      }));
+      const lp = polar(C, C, (ri + ro) / 2, centre);
+      const t = mk("text", {
+        x: lp.x, y: lp.y + 3.5, class: "wedge-label" + (DARK_INK.has(thisFam) && !isDark() ? " dark-ink" : ""),
+        "text-anchor": "middle",
+      });
+      t.textContent = pretty(kid);
+      g.appendChild(t);
+      if (path.length === 3) {
+        const dp = polar(C, C, ro - 9, centre);
+        g.appendChild(mk("circle", { cx: dp.x, cy: dp.y, r: "2", fill: "var(--surface-1)", class: "ext-dot" }));
+      }
+      const go = () => {
+        const next = [...path, kid];
+        if (childrenOf(next).length === 0) { commit(next); return; }
+        path = next; drawWheel();
+      };
+      g.addEventListener("click", go);
+      g.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); }
+      });
+      wheelEl.appendChild(g);
+    });
+
+    // hub
+    const live = path.length > 0;
+    const hub = mk("g", live
+      ? { class: "hub-btn", role: "button", tabindex: "0",
+          "aria-label": `Log ${pretty(path.at(-1))}` }
+      : { class: "hub-static" });
+    hub.appendChild(mk("circle", {
+      cx: C, cy: C, r: ri - 4, fill: "var(--hub)",
+      stroke: live ? col(famOf(path)) : "var(--line)", "stroke-width": live ? "2" : "1",
+    }));
+    const w = mk("text", { x: C, y: live ? C - 1 : C + 4, class: "hub-word" });
+    w.textContent = live ? pretty(path.at(-1)) : "pick one";
+    hub.appendChild(w);
+    if (live) {
+      const v = mk("text", { x: C, y: C + 13, class: "hub-verb" });
+      v.textContent = "tap to log";
+      hub.appendChild(v);
+      hub.addEventListener("click", () => commit(path));
+      hub.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); commit(path); }
+      });
+    }
+    wheelEl.appendChild(hub);
+    drawCrumbs();
+  }
+
+  function drawCrumbs() {
+    crumbsEl.replaceChildren();
+    const root = document.createElement("button");
+    root.className = "crumb" + (path.length === 0 ? " now" : "");
+    root.textContent = "all";
+    root.addEventListener("click", () => { path = []; drawWheel(); });
+    crumbsEl.appendChild(root);
+    path.forEach((p, i) => {
+      const sep = document.createElement("span");
+      sep.className = "crumb-sep"; sep.textContent = "›";
+      crumbsEl.appendChild(sep);
+      const b = document.createElement("button");
+      b.className = "crumb" + (i === path.length - 1 ? " now" : "");
+      b.textContent = pretty(p);
+      b.addEventListener("click", () => { path = path.slice(0, i + 1); drawWheel(); });
+      crumbsEl.appendChild(b);
+    });
+  }
+
+  /* ── 2 · detail ────────────────────────────────────────── */
+  let picked = ["mad", "hurt", "embarrassed"];
+  let intensity = 3;
+
+  function commit(p) { picked = p; drawDetail(); }
+
+  function drawDetail() {
+    const fam = famOf(picked);
+    document.getElementById("d-path").textContent =
+      picked.slice(0, -1).map(pretty).join(" › ") || "—";
+    document.getElementById("d-word").textContent = pretty(picked.at(-1));
+    document.getElementById("d-word").style.color = col(fam);
+    document.getElementById("d-cite").textContent = citeOf(picked);
+    document.getElementById("d-ring").textContent = `Ring ${picked.length}`;
+
+    const steps = document.getElementById("steps");
+    steps.replaceChildren();
+    for (let i = 1; i <= 5; i++) {
+      const b = document.createElement("button");
+      b.className = "step";
+      b.type = "button";
+      b.textContent = i;
+      b.setAttribute("aria-pressed", String(i === intensity));
+      b.setAttribute("aria-label", `Intensity ${i} of 5`);
+      if (i === intensity) b.style.background = col(fam);
+      b.addEventListener("click", () => { intensity = i; drawDetail(); });
+      steps.appendChild(b);
+    }
+    const sug = document.getElementById("suggests");
+    sug.replaceChildren();
+    for (const t of ["standup", "1:1 with M", "commute", "no reason"]) {
+      const c = document.createElement("button");
+      c.className = "chip"; c.type = "button"; c.textContent = t;
+      c.addEventListener("click", () => { document.getElementById("trigger").value = t; });
+      sug.appendChild(c);
+    }
+  }
+
+  document.getElementById("save").addEventListener("click", (e) => {
+    const b = e.currentTarget;
+    b.textContent = "Saved";
+    setTimeout(() => { b.textContent = "Save entry"; }, 1100);
+  });
+
+  /* ── recents + search ──────────────────────────────────── */
+  const RECENTS = [
+    ["anxious", ["scared", "anxious"]], ["inadequate", ["scared", "insecure", "inadequate"]],
+    ["content", ["peaceful", "content"]], ["irritated", ["mad", "hostile", "irritated"]],
+    ["capable", ["powerful", "important", "capable"]], ["lonely", ["sad", "lonely"]],
+  ];
+  const recEl = document.getElementById("recents");
+  for (const [label, p] of RECENTS) {
+    const c = document.createElement("button");
+    c.className = "chip"; c.type = "button";
+    const s = document.createElement("span");
+    s.className = "swatch"; s.style.background = col(famOf(p));
+    c.append(s, document.createTextNode(label));
+    c.addEventListener("click", () => commit(p));
+    recEl.appendChild(c);
+  }
+  document.getElementById("search").addEventListener("input", (e) => {
+    const q = e.target.value.trim().toLowerCase();
+    if (!q) return;
+    for (const fam of FAMILIES) {
+      for (const [r2, r3s] of Object.entries(TREE[fam])) {
+        for (const r3 of r3s) if (r3.startsWith(q)) { commit([fam, r2, r3]); return; }
+        if (r2.startsWith(q)) { commit([fam, r2]); return; }
+      }
+    }
+  });
+
+  /* ── 3 · month ─────────────────────────────────────────── */
+  function glyph(entries, size, opts = {}) {
+    const svg = mk("svg", {
+      viewBox: `0 0 ${size} ${size}`, width: size, height: size, role: "img",
+      "aria-label": entries.length
+        ? `${entries.length} ${entries.length === 1 ? "entry" : "entries"}`
+        : "No entries",
+    });
+    const c = size / 2, rHub = size * 0.09, rMax = size * 0.44;
+    svg.appendChild(mk("circle", {
+      cx: c, cy: c, r: rMax, fill: "none", stroke: "currentColor",
+      "stroke-opacity": opts.guide ?? 0.16, "stroke-width": 1, class: "guide",
+    }));
+    const spokes = [];
+    for (const fam of FAMILIES) {
+      const mine = entries.filter((e) => e.fam === fam);
+      if (!mine.length) continue;
+      const angles = fanAngles(ANGLE[fam], 60, mine.length);
+      mine.forEach((e, i) => spokes.push({ fam, a: angles[i], frac: 0.35 + (e.i / 5) * 0.65 }));
+    }
+    const sw = spokes.length > 8 ? 1.5 : 2;
+    for (const s of spokes) {
+      const a = polar(c, c, rHub, s.a);
+      const b = polar(c, c, rHub + (rMax - rHub) * s.frac, s.a);
+      svg.appendChild(mk("line", {
+        x1: a.x, y1: a.y, x2: b.x, y2: b.y, stroke: col(s.fam),
+        "stroke-width": sw, "stroke-linecap": "round",
+      }));
+    }
+    return svg;
+  }
+
+  // Deterministic sample month.
+  let seed = 20260802;
+  const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+  const LEAVES = [];
+  for (const fam of FAMILIES)
+    for (const [r2, r3s] of Object.entries(TREE[fam]))
+      for (const r3 of r3s) LEAVES.push({ fam, label: r3, r2 });
+  const TRIGS = ["standup", "1:1 with M", "commute", "no reason", "deploy", "gym", "sunday evening"];
+
+  const DAYS = {};
+  for (let d = 1; d <= 31; d++) {
+    const dow = new Date(2026, 7, d).getDay();
+    const weekend = dow === 0 || dow === 6;
+    const n = rnd() < 0.12 ? 0 : Math.floor(rnd() * (weekend ? 3 : 5)) + 1;
+    const list = [];
+    for (let k = 0; k < n; k++) {
+      // Weekends tilt positive, weekdays tilt negative — a pattern worth seeing.
+      const pool = LEAVES.filter((l) =>
+        weekend ? ["peaceful", "joyful", "powerful"].includes(l.fam) || rnd() < 0.35
+                : ["scared", "mad", "sad"].includes(l.fam) || rnd() < 0.4);
+      const pick = pool[Math.floor(rnd() * pool.length)];
+      list.push({ ...pick, i: Math.floor(rnd() * 5) + 1,
+                  trig: TRIGS[Math.floor(rnd() * TRIGS.length)],
+                  hh: String(7 + Math.floor(rnd() * 15)).padStart(2, "0") });
+    }
+    DAYS[d] = list;
+  }
+
+  const gridEl = document.getElementById("grid");
+  const dayoutEl = document.getElementById("dayout");
+  const TODAY = 2;
+
+  function drawMonth() {
+    gridEl.replaceChildren();
+    const lead = (new Date(2026, 7, 1).getDay() + 6) % 7; // Monday-first
+    for (let i = 0; i < lead; i++) {
+      const s = document.createElement("div");
+      s.className = "cell out";
+      gridEl.appendChild(s);
+    }
+    for (let d = 1; d <= 31; d++) {
+      const b = document.createElement("button");
+      b.className = "cell" + (d === TODAY ? " today" : "");
+      b.type = "button";
+      b.setAttribute("aria-label",
+        `2 August ${d}: ${DAYS[d].length} ${DAYS[d].length === 1 ? "entry" : "entries"}`);
+      b.appendChild(glyph(DAYS[d], 34, { guide: d === TODAY ? 0.5 : 0.16 }));
+      b.addEventListener("click", () => showDay(d));
+      gridEl.appendChild(b);
+    }
+    const tail = (7 - ((lead + 31) % 7)) % 7;
+    for (let i = 0; i < tail; i++) {
+      const s = document.createElement("div");
+      s.className = "cell out";
+      gridEl.appendChild(s);
+    }
+    drawKey();
+  }
+
+  function drawKey() {
+    const k = document.getElementById("keyglyph");
+    k.replaceChildren();
+    const c = 15, r = 12;
+    k.appendChild(mk("circle", { cx: c, cy: c, r, fill: "none",
+      stroke: "currentColor", "stroke-opacity": .16 }));
+    for (const fam of FAMILIES) {
+      const a = polar(c, c, 3, ANGLE[fam]), b = polar(c, c, r - 1, ANGLE[fam]);
+      k.appendChild(mk("line", { x1: a.x, y1: a.y, x2: b.x, y2: b.y,
+        stroke: col(fam), "stroke-width": 2, "stroke-linecap": "round" }));
+    }
+  }
+
+  function showDay(d) {
+    dayoutEl.replaceChildren();
+    const h = document.createElement("div");
+    h.className = "dayout-date";
+    h.textContent = `${d} August · ${DAYS[d].length} ${DAYS[d].length === 1 ? "entry" : "entries"}`;
+    dayoutEl.appendChild(h);
+    if (!DAYS[d].length) {
+      const e = document.createElement("div");
+      e.className = "empty-day";
+      e.textContent = "Nothing logged.";
+      dayoutEl.appendChild(e);
+      return;
+    }
+    for (const e of DAYS[d].slice(0, 5)) {
+      const row = document.createElement("div");
+      row.className = "logrow";
+      const bar = document.createElement("div");
+      bar.className = "bar";
+      for (let i = 1; i <= 5; i++) {
+        const p = document.createElement("span");
+        p.className = "pip";
+        if (i <= e.i) p.style.background = col(e.fam);
+        bar.appendChild(p);
+      }
+      const name = document.createElement("span");
+      name.className = "name";
+      name.textContent = e.label;
+      const trig = document.createElement("span");
+      trig.className = "trig";
+      trig.textContent = e.trig;
+      row.append(bar, name, trig);
+      dayoutEl.appendChild(row);
+    }
+  }
+
+  /* ── palette table ─────────────────────────────────────── */
+  const palEl = document.getElementById("pal");
+  for (const fam of FAMILIES) {
+    const tr = document.createElement("tr");
+    const half = ANGLE[fam] === 0 || ANGLE[fam] > 240 || ANGLE[fam] < 120 ? "upper · positive" : "lower · negative";
+    tr.innerHTML =
+      `<td><span class="dot" style="background:${HEX[fam][0]}"></span>${fam}</td>` +
+      `<td class="hex">${ANGLE[fam]}°</td><td>${half}</td>` +
+      `<td class="hex">${HEX[fam][0]}</td><td class="hex">${HEX[fam][1]}</td>`;
+    palEl.appendChild(tr);
+  }
+
+  /* ── boot + theme reactivity ───────────────────────────── */
+  function drawAll() { drawWheel(); drawDetail(); drawMonth(); showDay(TODAY); }
+  drawAll();
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", drawAll);
+  new MutationObserver(drawAll).observe(document.documentElement, {
+    attributes: true, attributeFilter: ["data-theme"],
+  });
+</script>
