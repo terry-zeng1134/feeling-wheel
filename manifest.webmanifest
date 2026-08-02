@@ -1,0 +1,15 @@
+{
+  "name": "Feeling Wheel",
+  "short_name": "Feelings",
+  "description": "Name what you're feeling using the Feeling Wheel, then look back at the pattern. Everything stays on your device.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f4f3f0",
+  "theme_color": "#f4f3f0",
+  "icons": [
+    { "src": "./icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

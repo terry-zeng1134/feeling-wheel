@@ -1,0 +1,90 @@
+# Feeling Wheel
+
+Name what you're feeling, then look back at the pattern.
+
+A small offline web app built on Gloria Willcox's Feeling Wheel. You tap through
+a radial wheel from vague to specific — *mad → hurt → embarrassed → mortified* —
+log it with an intensity and a trigger, and the month view shows you the shape of
+it afterwards.
+
+**Everything stays on your device.** There is no account, no server, and no
+network request of any kind. Entries live in your browser's local storage, and
+the only way data leaves is if you export it yourself.
+
+## Install on iPhone
+
+Open the site in Safari → **Share** → **Add to Home Screen**. It launches
+fullscreen with no browser chrome, works with no connection, and gets its own
+longer-lived storage bucket.
+
+## What's in it
+
+| | |
+|---|---|
+| **Log** | The wheel, plus search and recent-word shortcuts. Stop at any ring — two taps for "I just feel bad", five for something exact. |
+| **Month** | One radial glyph per day. Angle is the feeling family, length is intensity, count is how many times you logged. Scroll down into a full timeline of entries. |
+| **Patterns** | Where entries sat, granularity over time, time-of-day histogram, and what you felt after recurring triggers. |
+| **Data** | Export JSON or CSV, import a backup, delete everything. |
+
+### The day glyph
+
+Six families sit at fixed angles, and the rotation carries meaning: the three
+positive families occupy the upper half, the three negative the lower. Spokes
+pointing up was a good day. You read the shape of a month from across the room.
+
+Colours were chosen by exhaustive search rather than by eye, gated on OKLab
+separation for the six cyclically-adjacent pairs — the only pairs that ever
+touch, because the angles are fixed. Worst adjacent pair: CVD ΔE 8.4 against a
+target of 8.0, normal-vision ΔE 19.3 against a floor of 15.0, in both themes.
+
+## Sources, and what is and isn't cited
+
+- **Rings 1–3** follow Gloria Willcox, "The Feeling Wheel," *Transactional
+  Analysis Journal* 12(4), 1982 — 6 core feelings, 36, then 72.
+  **This tree is a reconstruction and has not been verified word-for-word
+  against the 1982 paper.** It lives in one block at the top of
+  [`app/index.html`](app/index.html); correct any word there and the whole app
+  follows.
+- **Ring 4** is marked `ext.` in the UI and cites Shaver, Schwartz, Kirson &
+  O'Connor (*JPSP* 52:6, 1987) or Cowen & Keltner (*PNAS* 114:38, 2017). It is
+  partial by design — a branch only gets a fourth ring where a genuinely
+  distinct feeling exists, never a synonym.
+- **Definitions are authored for this app.** They are differential — each says
+  how a word differs from the ones beside it, because at the moment of choosing
+  that is the only thing that helps. They are not from Willcox, Shaver, or
+  Cowen & Keltner, and the UI says so.
+
+The review screens show counts and never interpretation. Thirty self-logged
+entries cannot support a causal claim, so nothing here makes one.
+
+## Layout
+
+```
+index.html              built, hosted page — do not edit directly
+app/index.html          the app itself; edit this
+manifest.webmanifest    PWA manifest
+sw.js                   offline cache
+tools/build.mjs         app/index.html + document shell → index.html
+tools/make-icons.mjs    generates the icons, no image dependencies
+mockup/index.html       earlier design mockup
+docs/superpowers/       design spec and full implementation plan
+```
+
+Rebuild after editing the app:
+
+```bash
+node tools/build.mjs
+```
+
+No build step beyond that, no dependencies, no package.json.
+
+## Status
+
+Working and usable. The [spec](docs/superpowers/specs/) and
+[implementation plan](docs/superpowers/plans/) describe a fuller TDD build —
+typed modules, IndexedDB, ~110 tests — which this single-file version
+deliberately shortcuts to be usable today.
+
+Known gaps against that plan: storage is `localStorage` rather than IndexedDB,
+there is no screen-reader list-mode alternative to the wheel, and the Willcox
+transcription needs verifying.

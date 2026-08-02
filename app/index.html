@@ -1,0 +1,1138 @@
+<title>Feeling Wheel</title>
+
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #f4f3f0; --card: #fcfcfb; --card-2: #ecebe6;
+    --line: #dcd9d2; --line-soft: #e7e4de;
+    --ink-1: #16150f; --ink-2: #55534a; --ink-3: #86837a;
+    --hub: #ffffff;
+    --peaceful: #1baf7a; --joyful: #eda100; --scared: #e87ba4;
+    --sad: #2a78d6; --mad: #e34948; --powerful: #4a3aa7;
+    --ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --bg: #121210; --card: #1c1c19; --card-2: #262622;
+      --line: #34342e; --line-soft: #2b2b27;
+      --ink-1: #f6f5ef; --ink-2: #b2b0a5; --ink-3: #7f7d73;
+      --hub: #2a2a26;
+      --peaceful: #199e70; --joyful: #c98500; --scared: #d55181;
+      --sad: #3987e5; --mad: #e66767; --powerful: #9085e9;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #121210; --card: #1c1c19; --card-2: #262622;
+    --line: #34342e; --line-soft: #2b2b27;
+    --ink-1: #f6f5ef; --ink-2: #b2b0a5; --ink-3: #7f7d73;
+    --hub: #2a2a26;
+    --peaceful: #199e70; --joyful: #c98500; --scared: #d55181;
+    --sad: #3987e5; --mad: #e66767; --powerful: #9085e9;
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink-1);
+    font-family: var(--ui); line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    overscroll-behavior-y: none;
+  }
+  button, input, textarea { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--ink-1); outline-offset: 2px; }
+
+  .app {
+    max-width: 460px; margin: 0 auto; min-height: 100dvh;
+    display: flex; flex-direction: column;
+    padding: max(10px, env(safe-area-inset-top)) 14px
+             calc(66px + env(safe-area-inset-bottom));
+  }
+
+  .screen { display: none; flex-direction: column; gap: 13px; flex: 1; }
+  .screen.on { display: flex; }
+
+  h1.brand {
+    margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -.01em;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  h1.brand .n { font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); font-weight: 400; }
+
+  /* ── tab bar ─────────────────────────────────── */
+  .tabs {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    background: color-mix(in srgb, var(--card) 88%, transparent);
+    backdrop-filter: blur(14px);
+    border-top: 1px solid var(--line);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .tabs button {
+    background: none; border: 0; padding: 9px 4px 10px; cursor: pointer;
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    font-family: var(--mono); font-size: 9px; letter-spacing: .09em;
+    text-transform: uppercase; color: var(--ink-3);
+  }
+  .tabs button[aria-current="true"] { color: var(--ink-1); }
+  .tabs .ic { width: 17px; height: 17px; display: block; }
+
+  /* ── wheel ───────────────────────────────────── */
+  .wheelwrap { display: grid; place-items: center; padding: 2px 0; }
+  svg.wheel { width: min(88vw, 330px); height: min(88vw, 330px); display: block; }
+  .wedge { cursor: pointer; }
+  .wedge:active path { opacity: .74; }
+  .wlabel { font-size: 11px; font-weight: 600; pointer-events: none; }
+  .wlabel.sm { font-size: 9.5px; }
+  .hubw { font-size: 14px; font-weight: 650; fill: var(--ink-1); text-anchor: middle; pointer-events: none; }
+  .hubv {
+    font-family: var(--mono); font-size: 8px; letter-spacing: .13em;
+    fill: var(--ink-3); text-anchor: middle; pointer-events: none; text-transform: uppercase;
+  }
+  .extdot { pointer-events: none; }
+
+  .crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; min-height: 26px; }
+  .crumb {
+    background: none; border: 0; padding: 3px 7px; border-radius: 7px;
+    color: var(--ink-2); font-size: 13px; cursor: pointer;
+  }
+  .crumb.now { color: var(--ink-1); font-weight: 600; }
+  .csep { color: var(--ink-3); font-size: 11px; }
+
+  .inp {
+    width: 100%; padding: 10px 12px; border-radius: 11px;
+    border: 1px solid var(--line); background: var(--card); font-size: 15px;
+  }
+  .inp::placeholder { color: var(--ink-3); }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 5px; }
+  .chip {
+    font-size: 12.5px; padding: 5px 10px; border-radius: 999px;
+    border: 1px solid var(--line); background: var(--card); color: var(--ink-2);
+    cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+  }
+  .sw { width: 7px; height: 7px; border-radius: 2px; flex: 0 0 auto; }
+  .lbl {
+    font-family: var(--mono); font-size: 9.5px; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--ink-3);
+  }
+
+  .results { display: flex; flex-direction: column; gap: 2px; }
+  .res {
+    display: flex; align-items: center; gap: 9px; padding: 9px 10px;
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    cursor: pointer; text-align: left; width: 100%;
+  }
+  .res .p { color: var(--ink-3); font-size: 11px; font-family: var(--mono); }
+
+  /* ── sheet ───────────────────────────────────── */
+  .sheet {
+    position: fixed; inset: 0; z-index: 100; display: none;
+    background: color-mix(in srgb, var(--bg) 70%, transparent);
+    backdrop-filter: blur(6px);
+    align-items: flex-end; justify-content: center;
+  }
+  .sheet.on { display: flex; }
+  .sheet-in {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 20px 20px 0 0; width: 100%; max-width: 460px;
+    max-height: 92dvh; overflow-y: auto;
+    padding: 16px 16px calc(18px + env(safe-area-inset-bottom));
+    display: flex; flex-direction: column; gap: 14px;
+  }
+  .grab { width: 34px; height: 4px; border-radius: 2px; background: var(--line); margin: 0 auto; }
+  .picked-w { font-size: 29px; font-weight: 600; letter-spacing: -.02em; line-height: 1.08; }
+  .picked-p { font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); }
+  .cite {
+    font-family: var(--mono); font-size: 9.5px; color: var(--ink-3);
+    border: 1px dashed var(--line); border-radius: 5px; padding: 3px 7px;
+    display: inline-block; width: fit-content;
+  }
+  .gloss { margin: 0; font-size: 14px; color: var(--ink-2); }
+  details.diff { border-top: 1px solid var(--line-soft); padding-top: 9px; }
+  details.diff summary {
+    list-style: none; cursor: pointer; color: var(--ink-3);
+    font-family: var(--mono); font-size: 9.5px; letter-spacing: .12em; text-transform: uppercase;
+  }
+  details.diff summary::-webkit-details-marker { display: none; }
+  details.diff summary::after { content: " +"; }
+  details.diff[open] summary::after { content: " –"; }
+  .diff ul { list-style: none; margin: 9px 0 0; padding: 0; display: flex; flex-direction: column; gap: 9px; }
+  .diff li { font-size: 13px; color: var(--ink-2); }
+  .diff b { color: var(--ink-1); }
+
+  .steps { display: flex; gap: 6px; }
+  .step {
+    flex: 1; height: 46px; border-radius: 11px; cursor: pointer;
+    border: 1px solid var(--line); background: var(--card-2); color: var(--ink-3);
+    font-size: 15px; font-variant-numeric: tabular-nums;
+  }
+  .step[aria-pressed="true"] { color: #fff; border-color: transparent; font-weight: 650; }
+  textarea.inp { min-height: 74px; resize: none; }
+  .btn {
+    padding: 14px; border-radius: 13px; border: 0; cursor: pointer;
+    background: var(--ink-1); color: var(--bg); font-size: 15px; font-weight: 600;
+  }
+  .btn.ghost { background: var(--card-2); color: var(--ink-1); border: 1px solid var(--line); }
+  .btn.danger { background: var(--card-2); color: var(--mad); border: 1px solid var(--line); }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+  /* ── month + timeline ────────────────────────── */
+  .mhead { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .mnav { display: flex; gap: 4px; }
+  .mnav button {
+    background: var(--card); border: 1px solid var(--line); border-radius: 9px;
+    width: 32px; height: 30px; cursor: pointer; color: var(--ink-2); font-size: 15px; line-height: 1;
+  }
+  .dow {
+    display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px;
+    font-family: var(--mono); font-size: 9px; color: var(--ink-3); text-align: center;
+  }
+  .grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+  .cell {
+    aspect-ratio: 1; border: 0; background: none; padding: 0; border-radius: 9px;
+    display: grid; place-items: center; cursor: pointer; position: relative;
+  }
+  .cell.out { opacity: .16; pointer-events: none; }
+  .cell.today { background: var(--card); }
+  .keyrow { display: flex; align-items: center; gap: 8px; }
+  .keytxt { font-family: var(--mono); font-size: 9px; color: var(--ink-3); line-height: 1.35; }
+
+  .tl { display: flex; flex-direction: column; gap: 15px; margin-top: 4px; }
+  .tlday { display: flex; flex-direction: column; gap: 8px; scroll-margin-top: 8px; }
+  .tlhead {
+    display: flex; align-items: center; gap: 9px;
+    border-top: 1px solid var(--line-soft); padding-top: 9px;
+  }
+  .tlhead .d {
+    flex: 1; font-family: var(--mono); font-size: 10px; letter-spacing: .11em;
+    text-transform: uppercase; color: var(--ink-3);
+  }
+  .tlday.hit .tlhead .d { color: var(--ink-1); }
+  .ent {
+    display: grid; grid-template-columns: 38px 1fr auto; gap: 9px;
+    align-items: baseline; background: var(--card); border: 1px solid var(--line);
+    border-radius: 11px; padding: 9px 11px; cursor: pointer; text-align: left; width: 100%;
+  }
+  .ent .t { font-family: var(--mono); font-size: 10px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .ent .w { font-weight: 600; font-size: 14.5px; }
+  .ent .bar { display: flex; gap: 2px; align-self: center; }
+  .pip { width: 3px; height: 11px; border-radius: 1px; background: var(--line); }
+  .ent .sub {
+    grid-column: 2 / -1; font-size: 12px; color: var(--ink-3);
+    display: flex; flex-direction: column; gap: 1px; margin-top: 1px;
+  }
+  .ent .sub .q { color: var(--ink-2); font-style: italic; }
+
+  /* ── patterns ────────────────────────────────── */
+  .card {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 14px; padding: 13px; display: flex; flex-direction: column; gap: 10px;
+  }
+  .card h2 { margin: 0; font-size: 13.5px; font-weight: 600; }
+  .seg { display: flex; gap: 4px; }
+  .seg button {
+    flex: 1; padding: 6px; border-radius: 8px; cursor: pointer; font-size: 12px;
+    border: 1px solid var(--line); background: var(--card-2); color: var(--ink-3);
+  }
+  .seg button[aria-pressed="true"] { color: var(--ink-1); background: var(--card); font-weight: 600; }
+  .brow { display: grid; grid-template-columns: 76px 1fr 26px; gap: 8px; align-items: center; font-size: 12.5px; }
+  .btrack { height: 9px; background: var(--card-2); border-radius: 5px; overflow: hidden; }
+  .bfill { height: 100%; border-radius: 5px; }
+  .bnum { font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); text-align: right; font-variant-numeric: tabular-nums; }
+  .hours { display: grid; grid-template-columns: repeat(24, 1fr); gap: 1px; align-items: end; height: 56px; }
+  .hbar { background: var(--card-2); border-radius: 2px 2px 0 0; min-height: 2px; display: flex; flex-direction: column-reverse; }
+  .hseg { width: 100%; }
+  .hax { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 8.5px; color: var(--ink-3); }
+  .stat { display: flex; align-items: baseline; gap: 7px; }
+  .stat .v { font-size: 25px; font-weight: 640; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  .stat .k { font-size: 12px; color: var(--ink-3); }
+  .need { font-size: 12.5px; color: var(--ink-3); }
+  .trg { display: flex; flex-direction: column; gap: 7px; }
+  .trg .th { display: flex; justify-content: space-between; font-size: 13px; }
+  .trg .th .n { font-family: var(--mono); font-size: 10px; color: var(--ink-3); }
+  .empty { color: var(--ink-3); font-size: 13.5px; text-align: center; padding: 26px 8px; }
+  .note-s { font-size: 11.5px; color: var(--ink-3); }
+  .toast {
+    position: fixed; left: 50%; bottom: 82px; transform: translateX(-50%);
+    background: var(--ink-1); color: var(--bg); padding: 9px 15px; border-radius: 999px;
+    font-size: 13px; z-index: 200; opacity: 0; pointer-events: none; transition: opacity .18s;
+  }
+  .toast.on { opacity: 1; }
+  @media (prefers-reduced-motion: reduce) { .toast { transition: none; } }
+</style>
+
+<div class="app">
+
+  <!-- ── LOG ─────────────────────────────────── -->
+  <section class="screen on" id="s-log">
+    <h1 class="brand">Feeling Wheel <span class="n" id="count">0 entries</span></h1>
+    <input class="inp" id="q" placeholder="Search a feeling…" aria-label="Search a feeling" autocomplete="off" />
+    <div class="results" id="results"></div>
+    <div id="recents-wrap" style="display:flex;flex-direction:column;gap:6px">
+      <div class="lbl">Recent</div>
+      <div class="chips" id="recents"></div>
+    </div>
+    <nav class="crumbs" id="crumbs" aria-label="Position in the wheel"></nav>
+    <div class="wheelwrap"><svg class="wheel" id="wheel" viewBox="0 0 330 330" aria-label="Feeling wheel"></svg></div>
+    <p class="note-s">Tap a wedge to go deeper · tap the middle to log where you are · long-press for a definition</p>
+  </section>
+
+  <!-- ── MONTH ───────────────────────────────── -->
+  <section class="screen" id="s-month">
+    <div class="mhead">
+      <h1 class="brand" id="mtitle" style="flex:1">August 2026</h1>
+      <div class="mnav">
+        <button id="prevm" aria-label="Previous month">‹</button>
+        <button id="nextm" aria-label="Next month">›</button>
+      </div>
+    </div>
+    <div class="keyrow">
+      <svg width="34" height="34" viewBox="0 0 34 34" id="keyg" aria-label="Family positions"></svg>
+      <div class="keytxt">up = positive · down = negative<br>length = intensity · count = entries</div>
+    </div>
+    <div class="dow"><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span></div>
+    <div class="grid" id="grid"></div>
+    <div class="tl" id="tl"></div>
+  </section>
+
+  <!-- ── PATTERNS ────────────────────────────── -->
+  <section class="screen" id="s-pat">
+    <h1 class="brand">Patterns</h1>
+    <div class="seg" id="range" role="group" aria-label="Time range">
+      <button data-d="7">7 days</button>
+      <button data-d="30" aria-pressed="true">30 days</button>
+      <button data-d="90">90 days</button>
+    </div>
+    <div id="pat-body" style="display:flex;flex-direction:column;gap:11px"></div>
+    <p class="note-s">Counts only. Nothing here interprets anything for you.</p>
+  </section>
+
+  <!-- ── DATA ────────────────────────────────── -->
+  <section class="screen" id="s-data">
+    <h1 class="brand">Your data</h1>
+    <div class="card">
+      <h2>On this device only</h2>
+      <p class="note-s" style="margin:0">
+        Entries live in this browser's storage. Nothing is sent anywhere — there is no
+        server and no account. iOS can clear this if the app goes unused for a long
+        stretch, so export now and then.
+      </p>
+      <div class="stat"><span class="v" id="d-count">0</span><span class="k">entries stored</span></div>
+      <div class="row2">
+        <button class="btn ghost" id="ex-json">Export JSON</button>
+        <button class="btn ghost" id="ex-csv">Export CSV</button>
+      </div>
+      <button class="btn ghost" id="im-btn">Import a JSON backup</button>
+      <input type="file" id="im-file" accept="application/json,.json" hidden />
+    </div>
+    <div class="card">
+      <h2>Install on your phone</h2>
+      <p class="note-s" style="margin:0">
+        In Safari, tap Share, then <b>Add to Home Screen</b>. It opens without browser
+        chrome and gets its own, longer-lived storage.
+      </p>
+    </div>
+    <div class="card">
+      <h2>Where the words come from</h2>
+      <p class="note-s" style="margin:0">
+        Structure follows Gloria Willcox's Feeling Wheel (<i>Transactional Analysis
+        Journal</i>, 1982): 6 core feelings, 36, then 72. A fourth ring is marked
+        <b>ext.</b> and cites Shaver et al. (1987) or Cowen &amp; Keltner (2017).
+        Definitions are authored, not from those sources. The 72-word tree is a
+        reconstruction and has not been verified word-for-word against the 1982 paper.
+      </p>
+    </div>
+    <button class="btn danger" id="wipe">Delete everything</button>
+  </section>
+
+  <nav class="tabs">
+    <button data-go="log" aria-current="true">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.2"/></svg>
+      Log
+    </button>
+    <button data-go="month">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3.5" y="4.5" width="17" height="16" rx="2.5"/><path d="M3.5 9.5h17M8 3v3M16 3v3"/></svg>
+      Month
+    </button>
+    <button data-go="pat">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
+      Patterns
+    </button>
+    <button data-go="data">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><ellipse cx="12" cy="6" rx="7.5" ry="3"/><path d="M4.5 6v12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3V6M4.5 12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3"/></svg>
+      Data
+    </button>
+  </nav>
+</div>
+
+<div class="sheet" id="sheet"><div class="sheet-in" id="sheet-in"></div></div>
+<div class="toast" id="toast"></div>
+
+<script type="module">
+/* ══ taxonomy ═══════════════════════════════════════════════════════════
+   Structure follows Willcox (1982): 6 / 36 / 72.
+   RECONSTRUCTION — not verified word-for-word against the paper. Correct
+   any word here and the whole app follows.
+   Leaf form: [label, gloss, "how it differs from its sibling"]
+   ═══════════════════════════════════════════════════════════════════════ */
+const T = {
+  mad: {
+    hurt: [
+      ["embarrassed", "Exposed in a small way, in front of people whose opinion you want. The stakes are social, not moral.", "Embarrassment is about being seen; devastation is about losing something."],
+      ["devastated", "Something you were counting on is gone, and the shape of things changed with it.", "Devastation is loss you rebuild from; embarrassment passes once attention moves on."]],
+    hostile: [
+      ["irritated", "Something small keeps catching, and your tolerance was already spent.", "Irritation is about the friction itself; frustration is about a goal behind it."],
+      ["frustrated", "You know what you want and something keeps standing between you and it.", "Frustration has a blocked goal; irritation just wants the thing to stop."]],
+    angry: [
+      ["furious", "Anger at full volume, past the point where you are choosing your words.", "Fury is about the heat; being provoked is about someone having aimed at you."],
+      ["provoked", "Someone found the specific thing that would set you off, and used it.", "Provocation implies an author; fury doesn't need one."]],
+    rage: [
+      ["hateful", "Anger that has curdled into wanting harm, not merely wanting it to stop.", "Hate wants to injure; violation is about a boundary already crossed."],
+      ["violated", "A line you thought was yours to hold was crossed without asking.", "Violation is something done to you; hate is something you are carrying."]],
+    exasperated: [
+      ["agitated", "Anger with nowhere to put itself. You cannot sit still and cannot act.", "Agitation is unfocused; indignation knows exactly what was unfair."],
+      ["indignant", "Anger on behalf of fairness. Something was unjust and you are certain of it.", "Indignation has a principle behind it; agitation has only pressure."]],
+    critical: [
+      ["skeptical", "Withholding belief until something proves itself. Doubt pointed outward.", "Skepticism is still open to being convinced; dismissal has closed."],
+      ["dismissive", "You have already decided it is not worth your consideration.", "Dismissal is a verdict; skepticism is a question."]],
+  },
+  sad: {
+    lonely: [
+      ["isolated", "Cut off by circumstance. The distance is structural and nobody chose it.", "Isolation is a condition; abandonment is an act."],
+      ["abandoned", "Someone who should have stayed didn't. The absence has an author.", "Abandonment means someone left; isolation can happen with no one at fault."]],
+    depressed: [
+      ["empty", "Not sad exactly — nothing registers, good or bad.", "Emptiness is the absence of feeling; inferiority is a feeling about yourself."],
+      ["inferior", "Measured against other people and coming up short as a person, not at a task.", "Inferiority compares you to others; emptiness compares you to nothing at all."]],
+    guilty: [
+      ["ashamed", "You did something, and now the badness feels like it is in you rather than in the act.", "Shame is about what you are; remorse is about what you did."],
+      ["remorseful", "Focused on the harm done and wanting to repair it.", "Remorse looks outward at the damage; shame looks inward at yourself."]],
+    despair: [
+      ["powerless", "Nothing you do changes the outcome, and you have stopped believing it could.", "Powerlessness is about the future; grief is about what is already gone."],
+      ["grieving", "Carrying a loss that is permanent, in waves rather than steadily.", "Grief has an object it is mourning; powerlessness has a situation it cannot move."]],
+    "let down": [
+      ["disappointed", "What you hoped for didn't arrive, and the hope was reasonable.", "Disappointment expected better; dismay didn't see it coming."],
+      ["dismayed", "Caught off guard by how badly it turned out — the surprise is part of the injury.", "Dismay includes shock; disappointment is just the gap between hoped and got."]],
+    weary: [
+      ["apathetic", "You cannot locate the part of you that would care.", "Apathy has lost the caring; drained still cares and has nothing left to spend."],
+      ["drained", "You still care. There is simply nothing left to do it with.", "Being drained is about capacity; apathy is about desire."]],
+  },
+  scared: {
+    anxious: [
+      ["overwhelmed", "More is arriving than you can sort, so you have stopped sorting. The problem is volume, not danger.", "Overwhelm has no single object; worry has exactly one."],
+      ["worried", "Circling one particular bad outcome that hasn't happened, rehearsing it.", "Worry is one thing too often; overwhelm is too much at once."]],
+    insecure: [
+      ["inadequate", "Measured against what this moment asks, you come up short. The comparison is to a standard.", "Inadequacy is about not being able; smallness is about not counting."],
+      ["small", "Diminished next to someone else, taking up less room than you did an hour ago.", "Smallness is status next to a person; inadequacy is capability next to a task."]],
+    rejected: [
+      ["excluded", "The group closed and you were outside it. Whether it was deliberate is unclear.", "Exclusion may be accidental; being unwanted was a choice."],
+      ["unwanted", "Not merely left out — actively not chosen.", "Unwanted means someone decided; excluded may just be how it fell."]],
+    confused: [
+      ["bewildered", "Nothing is adding up and you cannot find the thread.", "Bewilderment can't follow the logic; adrift understands it and has no direction."],
+      ["adrift", "You understand each piece. What is missing is any sense of direction.", "Adrift is about where to go; bewildered is about what is happening."]],
+    helpless: [
+      ["frightened", "Something specific is threatening, right now, and you want to get away from it.", "Fright has a target; exposure is about having no cover from anything."],
+      ["exposed", "No cover. Whatever comes next will reach you.", "Exposure is a position; fright is a response to something particular."]],
+    submissive: [
+      ["worthless", "The sense that you do not warrant care, independent of anything you did.", "Worthlessness says you don't deserve; insignificance says you don't register."],
+      ["insignificant", "Not that you are bad — that you do not register at all.", "Insignificance is about being unseen; worthlessness is about being undeserving."]],
+  },
+  joyful: {
+    excited: [
+      ["eager", "Leaning toward something that hasn't started yet.", "Eagerness is before; thrill is after it landed."],
+      ["thrilled", "Joy with a jolt in it. The good thing already arrived.", "Thrill is a response; eagerness is anticipation."]],
+    playful: [
+      ["silly", "Enjoying being ridiculous, with no point to make.", "Silliness is harmless; mischief needs a small transgression to work."],
+      ["mischievous", "Delight that needs a little rule-breaking to be fun.", "Mischief has an edge; silliness has none."]],
+    energetic: [
+      ["animated", "Lit up and outward — talking faster, taking up more space.", "Animation is expressive; spirited has some fight in it."],
+      ["spirited", "Energy with some fight in it. Not just up, but game.", "Spirited is ready for a contest; animated is just switched on."]],
+    cheerful: [
+      ["delighted", "A small good thing landed better than it had any right to.", "Delight is about the thing; amusement is about it being funny."],
+      ["amused", "Something is funny and you are not trying to hide it.", "Amusement needs humour; delight only needs the good thing."]],
+    creative: [
+      ["curious", "Pulled toward something you do not understand yet.", "Curiosity wants to know; inspiration wants to make."],
+      ["inspired", "You can see the thing that doesn't exist yet and want to build it.", "Inspiration has an object it wants to create; curiosity has one it wants to open."]],
+    hopeful: [
+      ["optimistic", "Expecting it to go well, on balance.", "Optimism is a disposition; reassurance came from something specific."],
+      ["reassured", "You were worried, and something particular has settled it.", "Reassurance has a cause; optimism is just your lean."]],
+  },
+  powerful: {
+    proud: [
+      ["accomplished", "You finished something that took what you had, and the result holds up.", "Accomplishment is earned by doing; worth isn't earned at all."],
+      ["worthwhile", "You are worth the room you take up, independent of what you produced today.", "Worth is about mattering regardless of output; accomplishment needs a finished thing."]],
+    respected: [
+      ["valued", "Others treat what you bring as worth having.", "Being valued is about usefulness; being admired is about wanting to be like you."],
+      ["admired", "Others want to be more like you in some specific way.", "Admiration reaches past what you produce; value is about what you provide."]],
+    appreciated: [
+      ["recognised", "The work was noticed and named.", "Recognition is about the work; being seen is about you."],
+      ["seen", "Not the work — you. Someone got who you actually are.", "Being seen goes past output; recognition stops at it."]],
+    faithful: [
+      ["committed", "You have decided, and the deciding is over.", "Commitment is a decision; loyalty is what it costs to keep."],
+      ["loyal", "Staying with someone or something through the part where staying costs.", "Loyalty is tested; commitment only has to be made."]],
+    capable: [
+      ["needed", "Something would not work without you.", "Being needed depends on others; competence is yours either way."],
+      ["competent", "You know how to do this and you do not have to brace for it.", "Competence is about ability; being needed is about position."]],
+    confident: [
+      ["secure", "Steady in yourself. A bad outcome would not unmake you.", "Security is internal and quiet; assertiveness is outward and spoken."],
+      ["assertive", "Able to say the thing plainly, without apologising for wanting it.", "Assertiveness is an action; security is a state."]],
+  },
+  peaceful: {
+    content: [
+      ["satisfied", "What you wanted, you got, and the wanting has stopped for now.", "Satisfaction follows getting; ease doesn't require anything to have happened."],
+      ["at ease", "Nothing is asking anything of you, and you are not braced for it to start.", "Ease needs no achievement; satisfaction is the settling afterwards."]],
+    thoughtful: [
+      ["reflective", "Turning something over to understand it, without urgency.", "Reflection is working on something; pensive is being weighed by it."],
+      ["pensive", "Thinking with a faint weight to it. Not quite sad, not quite settled.", "Pensive carries some heaviness; reflection doesn't have to."]],
+    intimate: [
+      ["close", "The distance between you and someone is small, and welcome.", "Closeness is one relationship; connection can be to a group or a thing."],
+      ["connected", "Part of something — not merely near people, but among them.", "Connection is belonging; closeness is proximity to one person."]],
+    loving: [
+      ["tender", "Care with a soft edge, protective of something fragile.", "Tenderness implies something delicate; warmth doesn't."],
+      ["warm", "Simple, uncomplicated liking, given freely.", "Warmth is easy and broad; tenderness is careful and specific."]],
+    trusting: [
+      ["serene", "Untroubled even though there are things that could trouble you.", "Serenity holds despite pressure; unhurried simply has no pressure."],
+      ["unhurried", "Time is not pressing. You can take as long as this takes.", "Unhurried is about pace; serenity is about weather."]],
+    nurturing: [
+      ["compassionate", "Someone else's difficulty registers as real, and you want to ease it.", "Compassion responds to pain; generosity gives without needing a wound."],
+      ["generous", "Giving without keeping count.", "Generosity is unprompted; compassion answers something."]],
+  },
+};
+
+/* Ring 4 — cited extension, partial by design.
+   [label, source, gloss, "how it differs from its parent"] */
+const EXT = {
+  embarrassed: [
+    ["mortified", "Shaver et al. 1987", "Exposure so total you want to stop existing for a moment. The reaction outruns the audience.", "Embarrassment is survivable and social; mortification does not feel survivable."],
+    ["humiliated", "Shaver et al. 1987", "Brought low in front of others by someone who meant to do it. The injury is to standing.", "Embarrassment has no author; humiliation does."]],
+  overwhelmed: [
+    ["dread", "Cowen & Keltner 2017", "Certain something bad is coming, and unable to look away from it.", "Overwhelm is only certain there is too much; dread is certain it will be bad."]],
+  worried: [
+    ["apprehensive", "Shaver et al. 1987", "Braced for a specific thing, close enough now that you are already tightening.", "Worry rehearses at a distance; apprehension is on the threshold."]],
+  isolated: [
+    ["forsaken", "Shaver et al. 1987", "Left alone by people who owed you better, and knowing it.", "Isolation has no one at fault; forsaken names a debt unpaid."]],
+  grieving: [
+    ["anguished", "Shaver et al. 1987", "Grief at an intensity that is physically hard to stay inside of.", "Grief comes in waves you can ride; anguish is the wave not breaking."]],
+  accomplished: [
+    ["triumphant", "Cowen & Keltner 2017", "You won something that could have gone the other way.", "Accomplishment only needs the work done; triumph needs something overcome."]],
+  curious: [
+    ["enthralled", "Shaver et al. 1987", "So taken by something that the rest of the room has gone quiet.", "Curiosity can be put down; enthralment has already taken you."]],
+  tender: [
+    ["adoring", "Shaver et al. 1987", "Care that has tipped into wanting to look at them for a while longer.", "Tenderness protects; adoration admires."]],
+};
+
+const FAMILIES = ["peaceful", "joyful", "scared", "sad", "mad", "powerful"];
+const ANGLE = { peaceful: 0, joyful: 60, scared: 120, sad: 180, mad: 240, powerful: 300 };
+const HEX = {
+  peaceful: ["#1baf7a", "#199e70"], joyful: ["#eda100", "#c98500"],
+  scared:   ["#e87ba4", "#d55181"], sad:    ["#2a78d6", "#3987e5"],
+  mad:      ["#e34948", "#e66767"], powerful: ["#4a3aa7", "#9085e9"],
+};
+
+/* ── build the node index ─────────────────────────────────────────── */
+const N = new Map();
+function add(n) {
+  if (N.has(n.id)) throw new Error("duplicate id: " + n.id);
+  N.set(n.id, n); return n;
+}
+for (const fam of FAMILIES) {
+  add({ id: fam, label: fam, ring: 1, parent: null, family: fam, kids: [], src: "Willcox 1982" });
+  for (const [r2, leaves] of Object.entries(T[fam])) {
+    add({ id: r2, label: r2, ring: 2, parent: fam, family: fam, kids: [], src: "Willcox 1982" });
+    N.get(fam).kids.push(r2);
+    for (const [w, gloss, diff] of leaves) {
+      add({ id: w, label: w, ring: 3, parent: r2, family: fam, kids: [], src: "Willcox 1982", gloss, diff });
+      N.get(r2).kids.push(w);
+    }
+  }
+}
+for (const [parent, list] of Object.entries(EXT)) {
+  for (const [w, src, gloss, diff] of list) {
+    add({ id: w, label: w, ring: 4, parent, family: N.get(parent).family, kids: [], src, ext: true, gloss, diff });
+    N.get(parent).kids.push(w);
+  }
+}
+const kidsOf = (id) => (id === null ? FAMILIES.map((f) => N.get(f)) : N.get(id).kids.map((k) => N.get(k)));
+const pathOf = (id) => { const o = []; let c = N.get(id); while (c) { o.unshift(c.id); c = c.parent ? N.get(c.parent) : null; } return o; };
+const siblingsOf = (id) => { const n = N.get(id); return n.parent ? N.get(n.parent).kids.filter((k) => k !== id) : []; };
+
+/* ══ storage ═══════════════════════════════════════════════════════ */
+const KEY = "fw.entries.v1";
+let ENTRIES = [];
+try { ENTRIES = JSON.parse(localStorage.getItem(KEY) ?? "[]"); } catch { ENTRIES = []; }
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify(ENTRIES)); } catch { toast("Storage is full — export and clear some entries."); } };
+const uid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random());
+
+/* ══ helpers ═══════════════════════════════════════════════════════ */
+const isDark = () => {
+  const t = document.documentElement.getAttribute("data-theme");
+  if (t) return t === "dark";
+  return matchMedia("(prefers-color-scheme: dark)").matches;
+};
+const col = (f) => HEX[f][isDark() ? 1 : 0];
+const relLum = (h) => {
+  const c = [1, 3, 5].map((i) => { const v = parseInt(h.slice(i, i + 2), 16) / 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; });
+  return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+};
+const inkOn = (h) => (relLum(h) > 0.3 ? "#16150f" : "#ffffff");
+const NS = "http://www.w3.org/2000/svg";
+const mk = (t, a = {}) => { const e = document.createElementNS(NS, t); for (const k in a) e.setAttribute(k, a[k]); return e; };
+const el = (t, cls, txt) => { const e = document.createElement(t); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
+const polar = (cx, cy, r, d) => { const a = ((d - 90) * Math.PI) / 180; return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) }; };
+const wedgePath = (cx, cy, ri, ro, centre, span, gap) => {
+  const pad = (r) => ((gap / 2) / r) * (180 / Math.PI);
+  const pi = pad(ri), po = pad(ro), h = span / 2, lg = span > 180 ? 1 : 0;
+  const o0 = polar(cx, cy, ro, centre - h + po), o1 = polar(cx, cy, ro, centre + h - po);
+  const i1 = polar(cx, cy, ri, centre + h - pi), i0 = polar(cx, cy, ri, centre - h + pi);
+  return `M ${o0.x} ${o0.y} A ${ro} ${ro} 0 ${lg} 1 ${o1.x} ${o1.y} L ${i1.x} ${i1.y} A ${ri} ${ri} 0 ${lg} 0 ${i0.x} ${i0.y} Z`;
+};
+const fan = (c, span, n) => { if (n <= 1) return [c]; const u = span * 0.8, s = u / (n - 1); return Array.from({ length: n }, (_, i) => c - u / 2 + i * s); };
+const dstr = (iso) => { const d = new Date(iso), p = (x) => String(x).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; };
+const hhmm = (iso) => { const d = new Date(iso), p = (x) => String(x).padStart(2, "0"); return `${p(d.getHours())}:${p(d.getMinutes())}`; };
+const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MON = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+let toastT;
+function toast(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = msg; t.classList.add("on");
+  clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove("on"), 1900);
+}
+
+/* ══ glyph ═════════════════════════════════════════════════════════ */
+function glyph(entries, size, guide = 0.16) {
+  const svg = mk("svg", { viewBox: `0 0 ${size} ${size}`, width: size, height: size, role: "img",
+    "aria-label": entries.length ? `${entries.length} ${entries.length === 1 ? "entry" : "entries"}` : "nothing logged" });
+  const c = size / 2, rh = size * 0.09, rm = size * 0.44;
+  svg.appendChild(mk("circle", { cx: c, cy: c, r: rm, fill: "none", stroke: "currentColor", "stroke-opacity": guide, "stroke-width": 1 }));
+  const sp = [];
+  for (const f of FAMILIES) {
+    const mine = entries.filter((e) => e.path[0] === f);
+    if (!mine.length) continue;
+    const as = fan(ANGLE[f], 60, mine.length);
+    mine.forEach((e, i) => sp.push({ f, a: as[i], frac: 0.35 + (e.intensity / 5) * 0.65 }));
+  }
+  const w = sp.length > 8 ? 1.4 : 2;
+  for (const s of sp) {
+    const a = polar(c, c, rh, s.a), b = polar(c, c, rh + (rm - rh) * s.frac, s.a);
+    svg.appendChild(mk("line", { x1: a.x, y1: a.y, x2: b.x, y2: b.y, stroke: col(s.f), "stroke-width": w, "stroke-linecap": "round" }));
+  }
+  return svg;
+}
+
+/* ══ wheel ═════════════════════════════════════════════════════════ */
+let path = [];
+const wheelEl = document.getElementById("wheel");
+const crumbEl = document.getElementById("crumbs");
+
+function drawWheel() {
+  wheelEl.replaceChildren();
+  const C = 165, RH = 58, RI = 70, RO = 160, GAP = 3.5;
+  const kids = kidsOf(path.length ? path[path.length - 1] : null);
+  const fam = path.length ? N.get(path[0]).family : null;
+
+  kids.forEach((k, i) => {
+    const span = 360 / kids.length;
+    const centre = path.length === 0 ? ANGLE[k.id] : i * span;
+    const f = fam ?? k.id, fill = col(f);
+    const g = mk("g", { class: "wedge", role: "button", tabindex: "0",
+      "aria-label": `${k.label}${k.kids.length ? ", open" : ", log"}` });
+    g.appendChild(mk("path", { d: wedgePath(C, C, RI, RO, centre, span, GAP), fill }));
+    const lp = polar(C, C, (RI + RO) / 2, centre);
+    const t = mk("text", { x: lp.x, y: lp.y + 4, class: "wlabel" + (k.label.length > 10 ? " sm" : ""), fill: inkOn(fill), "text-anchor": "middle" });
+    t.textContent = k.label;
+    g.appendChild(t);
+    if (k.ext) {
+      const dp = polar(C, C, RO - 11, centre);
+      g.appendChild(mk("circle", { cx: dp.x, cy: dp.y, r: 2.4, fill: inkOn(fill), "fill-opacity": .6, class: "extdot" }));
+    }
+    const go = () => { if (k.kids.length) { path = [...path, k.id]; drawWheel(); } else openSheet(k.id); };
+    let lp_timer = null, longed = false;
+    g.addEventListener("pointerdown", () => {
+      longed = false;
+      if (k.ring >= 3) lp_timer = setTimeout(() => { longed = true; openDefine(k.id); }, 480);
+    });
+    const cancel = () => clearTimeout(lp_timer);
+    g.addEventListener("pointerup", cancel);
+    g.addEventListener("pointerleave", cancel);
+    g.addEventListener("pointercancel", cancel);
+    g.addEventListener("click", () => { if (!longed) go(); });
+    g.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); }
+      if (e.key === "?" && k.ring >= 3) { e.preventDefault(); openDefine(k.id); }
+    });
+    wheelEl.appendChild(g);
+  });
+
+  const live = path.length > 0;
+  const cur = live ? N.get(path[path.length - 1]) : null;
+  const hub = mk("g", live ? { class: "wedge", role: "button", tabindex: "0", "aria-label": `Log ${cur.label}` } : {});
+  hub.appendChild(mk("circle", { cx: C, cy: C, r: RH, fill: "var(--hub)", stroke: live ? col(cur.family) : "var(--line)", "stroke-width": live ? 2 : 1 }));
+  const w = mk("text", { x: C, y: live ? C - 1 : C + 5, class: "hubw" });
+  w.textContent = live ? cur.label : "pick one";
+  hub.appendChild(w);
+  if (live) {
+    const v = mk("text", { x: C, y: C + 15, class: "hubv" });
+    v.textContent = "tap to log";
+    hub.appendChild(v);
+    hub.addEventListener("click", () => openSheet(cur.id));
+    hub.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openSheet(cur.id); } });
+  }
+  wheelEl.appendChild(hub);
+  drawCrumbs();
+}
+
+function drawCrumbs() {
+  crumbEl.replaceChildren();
+  const b0 = el("button", "crumb" + (path.length ? "" : " now"), "all");
+  b0.addEventListener("click", () => { path = []; drawWheel(); });
+  crumbEl.appendChild(b0);
+  path.forEach((p, i) => {
+    crumbEl.appendChild(el("span", "csep", "›"));
+    const b = el("button", "crumb" + (i === path.length - 1 ? " now" : ""), N.get(p).label);
+    b.addEventListener("click", () => { path = path.slice(0, i + 1); drawWheel(); });
+    crumbEl.appendChild(b);
+  });
+}
+
+/* ══ definition sheet ══════════════════════════════════════════════ */
+function definitionBlock(id) {
+  const n = N.get(id);
+  const wrap = el("div");
+  wrap.style.cssText = "display:flex;flex-direction:column;gap:9px";
+  if (!n.gloss) { wrap.appendChild(el("p", "note-s", "No definition — the core feelings speak for themselves.")); return wrap; }
+  wrap.appendChild(el("p", "gloss", n.gloss));
+
+  const sibs = siblingsOf(id).map((s) => N.get(s));
+  const rows = [];
+  if (n.diff) rows.push([n.ring === 4 ? n.parent : (sibs[0] ? sibs[0].label : "—"), n.diff]);
+  for (const s of sibs) if (s.gloss && s.label !== (rows[0] && rows[0][0])) rows.push([s.label, s.diff]);
+
+  if (rows.length) {
+    const d = el("details", "diff");
+    d.appendChild(el("summary", null, `how this differs · ${rows.length}`));
+    const ul = el("ul");
+    for (const [vs, note] of rows.slice(0, 3)) {
+      const li = el("li");
+      li.append(el("b", null, vs), document.createTextNode(" — " + note));
+      ul.appendChild(li);
+    }
+    d.appendChild(ul);
+    wrap.appendChild(d);
+  }
+  const c = el("div", "cite", n.ext ? `${n.src} · ring 4 · extension` : `${n.src} · ring ${n.ring}`);
+  wrap.appendChild(c);
+  wrap.appendChild(el("p", "note-s", "Definitions are authored for this app, not taken from the cited sources."));
+  return wrap;
+}
+
+function openDefine(id) {
+  const n = N.get(id);
+  const box = document.getElementById("sheet-in");
+  box.replaceChildren();
+  box.appendChild(el("div", "grab"));
+  box.appendChild(el("div", "picked-p", pathOf(id).slice(0, -1).join(" › ")));
+  const w = el("div", "picked-w", n.label);
+  w.style.color = col(n.family);
+  box.appendChild(w);
+  box.appendChild(definitionBlock(id));
+  const b = el("button", "btn", `Log ${n.label}`);
+  b.addEventListener("click", () => openSheet(id));
+  box.appendChild(b);
+  const c = el("button", "btn ghost", "Close");
+  c.addEventListener("click", closeSheet);
+  box.appendChild(c);
+  document.getElementById("sheet").classList.add("on");
+}
+
+/* ══ entry sheet ═══════════════════════════════════════════════════ */
+let editing = null;
+function closeSheet() { document.getElementById("sheet").classList.remove("on"); editing = null; }
+document.getElementById("sheet").addEventListener("click", (e) => { if (e.target.id === "sheet") closeSheet(); });
+
+function openSheet(wordId, entry) {
+  editing = entry ?? null;
+  const n = N.get(wordId);
+  let intensity = entry ? entry.intensity : 3;
+  const box = document.getElementById("sheet-in");
+  box.replaceChildren();
+  box.appendChild(el("div", "grab"));
+
+  box.appendChild(el("div", "picked-p", pathOf(wordId).slice(0, -1).join(" › ") || "core feeling"));
+  const w = el("div", "picked-w", n.label);
+  w.style.color = col(n.family);
+  box.appendChild(w);
+  box.appendChild(definitionBlock(wordId));
+
+  box.appendChild(el("div", "lbl", "Intensity"));
+  const steps = el("div", "steps");
+  const paint = () => [...steps.children].forEach((b, i) => {
+    const on = i + 1 === intensity;
+    b.setAttribute("aria-pressed", String(on));
+    b.style.background = on ? col(n.family) : "";
+  });
+  for (let i = 1; i <= 5; i++) {
+    const b = el("button", "step", String(i));
+    b.type = "button";
+    b.setAttribute("aria-label", `Intensity ${i} of 5`);
+    b.addEventListener("click", () => { intensity = i; paint(); });
+    steps.appendChild(b);
+  }
+  paint();
+  box.appendChild(steps);
+
+  box.appendChild(el("div", "lbl", "Trigger"));
+  const trig = el("input", "inp");
+  trig.placeholder = "what happened";
+  trig.value = entry ? entry.trigger : "";
+  trig.autocomplete = "off";
+  box.appendChild(trig);
+  const sug = el("div", "chips");
+  const past = [...new Set(ENTRIES.map((e) => e.trigger).filter(Boolean))].slice(0, 6);
+  for (const t of past) {
+    const c = el("button", "chip", t);
+    c.type = "button";
+    c.addEventListener("click", () => { trig.value = t; });
+    sug.appendChild(c);
+  }
+  if (past.length) box.appendChild(sug);
+
+  box.appendChild(el("div", "lbl", "Note"));
+  const note = el("textarea", "inp");
+  note.placeholder = "optional";
+  note.value = entry ? entry.note : "";
+  box.appendChild(note);
+
+  const savebtn = el("button", "btn", entry ? "Update entry" : "Save entry");
+  savebtn.addEventListener("click", () => {
+    const p = pathOf(wordId);
+    if (entry) {
+      Object.assign(entry, { wordId, path: p, ring: n.ring, intensity, trigger: trig.value.trim(), note: note.value });
+    } else {
+      ENTRIES.push({ id: uid(), ts: new Date().toISOString(), wordId, path: p, ring: n.ring, intensity, trigger: trig.value.trim(), note: note.value });
+    }
+    save(); closeSheet(); path = []; refresh();
+    toast(entry ? "Updated" : `Logged ${n.label}`);
+  });
+  box.appendChild(savebtn);
+
+  if (entry) {
+    const del = el("button", "btn danger", "Delete this entry");
+    del.addEventListener("click", () => {
+      if (!confirm("Delete this entry? This cannot be undone.")) return;
+      ENTRIES = ENTRIES.filter((x) => x.id !== entry.id);
+      save(); closeSheet(); refresh(); toast("Deleted");
+    });
+    box.appendChild(del);
+  }
+  const cancel = el("button", "btn ghost", "Cancel");
+  cancel.addEventListener("click", closeSheet);
+  box.appendChild(cancel);
+
+  document.getElementById("sheet").classList.add("on");
+  document.getElementById("sheet-in").scrollTop = 0;
+}
+
+/* ══ search + recents ══════════════════════════════════════════════ */
+const qEl = document.getElementById("q");
+qEl.addEventListener("input", () => {
+  const q = qEl.value.trim().toLowerCase();
+  const box = document.getElementById("results");
+  box.replaceChildren();
+  if (!q) return;
+  const hits = [...N.values()]
+    .filter((n) => n.ring >= 2 && n.label.toLowerCase().includes(q))
+    .sort((a, b) => (a.label.toLowerCase().indexOf(q) - b.label.toLowerCase().indexOf(q)) || a.label.localeCompare(b.label))
+    .slice(0, 6);
+  for (const n of hits) {
+    const b = el("button", "res");
+    const s = el("span", "sw"); s.style.background = col(n.family);
+    b.append(s, el("span", null, n.label), el("span", "p", pathOf(n.id).slice(0, -1).join(" › ")));
+    b.addEventListener("click", () => { qEl.value = ""; box.replaceChildren(); openSheet(n.id); });
+    box.appendChild(b);
+  }
+});
+
+function drawRecents() {
+  const box = document.getElementById("recents");
+  box.replaceChildren();
+  const seen = [];
+  for (const e of [...ENTRIES].reverse()) { if (!seen.includes(e.wordId)) seen.push(e.wordId); if (seen.length === 6) break; }
+  document.getElementById("recents-wrap").style.display = seen.length ? "flex" : "none";
+  for (const id of seen) {
+    const n = N.get(id); if (!n) continue;
+    const c = el("button", "chip");
+    const s = el("span", "sw"); s.style.background = col(n.family);
+    c.append(s, document.createTextNode(n.label));
+    c.addEventListener("click", () => openSheet(id));
+    box.appendChild(c);
+  }
+}
+
+/* ══ month + timeline ══════════════════════════════════════════════ */
+let view = new Date();
+view.setDate(1);
+
+function byDate() {
+  const m = new Map();
+  for (const e of ENTRIES) { const d = dstr(e.ts); if (!m.has(d)) m.set(d, []); m.get(d).push(e); }
+  return m;
+}
+
+function drawMonth() {
+  const y = view.getFullYear(), mo = view.getMonth();
+  document.getElementById("mtitle").textContent = `${MON[mo]} ${y}`;
+  const map = byDate();
+  const grid = document.getElementById("grid");
+  grid.replaceChildren();
+  const lead = (new Date(y, mo, 1).getDay() + 6) % 7;
+  const days = new Date(y, mo + 1, 0).getDate();
+  const todayStr = dstr(new Date().toISOString());
+  for (let i = 0; i < lead; i++) grid.appendChild(el("div", "cell out"));
+  for (let d = 1; d <= days; d++) {
+    const key = `${y}-${String(mo + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    const es = map.get(key) ?? [];
+    const b = el("button", "cell" + (key === todayStr ? " today" : ""));
+    b.setAttribute("aria-label", `${d} ${MON[mo]}, ${es.length} ${es.length === 1 ? "entry" : "entries"}`);
+    b.appendChild(glyph(es, 40, key === todayStr ? 0.45 : 0.16));
+    b.addEventListener("click", () => {
+      const t = document.getElementById("tld-" + key);
+      document.querySelectorAll(".tlday.hit").forEach((n) => n.classList.remove("hit"));
+      if (t) { t.classList.add("hit"); t.scrollIntoView({ behavior: "smooth", block: "start" }); }
+      else toast("Nothing logged that day");
+    });
+    grid.appendChild(b);
+  }
+  const tail = (7 - ((lead + days) % 7)) % 7;
+  for (let i = 0; i < tail; i++) grid.appendChild(el("div", "cell out"));
+
+  const k = document.getElementById("keyg");
+  k.replaceChildren();
+  k.appendChild(mk("circle", { cx: 17, cy: 17, r: 13, fill: "none", stroke: "currentColor", "stroke-opacity": .16 }));
+  for (const f of FAMILIES) {
+    const a = polar(17, 17, 3.5, ANGLE[f]), b = polar(17, 17, 13, ANGLE[f]);
+    k.appendChild(mk("line", { x1: a.x, y1: a.y, x2: b.x, y2: b.y, stroke: col(f), "stroke-width": 2, "stroke-linecap": "round" }));
+  }
+  drawTimeline();
+}
+
+function drawTimeline() {
+  const host = document.getElementById("tl");
+  host.replaceChildren();
+  const map = byDate();
+  const keys = [...map.keys()].sort().reverse();
+  if (!keys.length) {
+    host.appendChild(el("div", "empty", "Nothing logged yet. Tap Log and name something."));
+    return;
+  }
+  for (const key of keys) {
+    const es = [...map.get(key)].sort((a, b) => b.ts.localeCompare(a.ts));
+    const day = el("section", "tlday");
+    day.id = "tld-" + key;
+    const head = el("div", "tlhead");
+    head.appendChild(glyph(es, 22, 0.22));
+    const dt = new Date(key + "T12:00:00");
+    const isToday = key === dstr(new Date().toISOString());
+    head.appendChild(el("span", "d", isToday ? `Today · ${dt.getDate()} ${MON[dt.getMonth()].slice(0, 3)}` : `${DOW[dt.getDay()]} ${dt.getDate()} ${MON[dt.getMonth()].slice(0, 3)}`));
+    head.appendChild(el("span", "bnum", String(es.length)));
+    day.appendChild(head);
+    for (const e of es) {
+      const n = N.get(e.wordId);
+      const row = el("button", "ent");
+      row.appendChild(el("span", "t", hhmm(e.ts)));
+      const w = el("span", "w", n ? n.label : e.wordId);
+      w.style.color = col(e.path[0]);
+      row.appendChild(w);
+      const bar = el("span", "bar");
+      for (let i = 1; i <= 5; i++) { const p = el("span", "pip"); if (i <= e.intensity) p.style.background = col(e.path[0]); bar.appendChild(p); }
+      row.appendChild(bar);
+      if (e.trigger || e.note) {
+        const sub = el("span", "sub");
+        if (e.trigger) sub.appendChild(el("span", null, e.trigger));
+        if (e.note) sub.appendChild(el("span", "q", "“" + e.note + "”"));
+        row.appendChild(sub);
+      }
+      row.addEventListener("click", () => openSheet(e.wordId, e));
+      day.appendChild(row);
+    }
+    host.appendChild(day);
+  }
+}
+document.getElementById("prevm").addEventListener("click", () => { view.setMonth(view.getMonth() - 1); drawMonth(); });
+document.getElementById("nextm").addEventListener("click", () => { view.setMonth(view.getMonth() + 1); drawMonth(); });
+
+/* ══ patterns ══════════════════════════════════════════════════════ */
+let RANGE = 30;
+document.getElementById("range").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  RANGE = Number(b.dataset.d);
+  [...e.currentTarget.children].forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+  drawPatterns();
+});
+[...document.getElementById("range").children].forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.d === "30")));
+
+function inRange() {
+  const cut = Date.now() - RANGE * 864e5;
+  return ENTRIES.filter((e) => new Date(e.ts).getTime() >= cut);
+}
+
+function drawPatterns() {
+  const host = document.getElementById("pat-body");
+  host.replaceChildren();
+  const es = inRange();
+  if (!es.length) {
+    host.appendChild(el("div", "empty", `Nothing logged in the last ${RANGE} days.`));
+    return;
+  }
+
+  // family rollup
+  const c1 = el("div", "card");
+  c1.appendChild(el("h2", null, "Where your entries sat"));
+  const counts = FAMILIES.map((f) => [f, es.filter((e) => e.path[0] === f).length]).filter((r) => r[1]).sort((a, b) => b[1] - a[1]);
+  const max = counts[0][1];
+  for (const [f, n] of counts) {
+    const r = el("div", "brow");
+    r.appendChild(el("span", null, f));
+    const tr = el("div", "btrack"), fi = el("div", "bfill");
+    fi.style.width = (n / max) * 100 + "%"; fi.style.background = col(f);
+    tr.appendChild(fi); r.appendChild(tr);
+    r.appendChild(el("span", "bnum", String(n)));
+    c1.appendChild(r);
+  }
+  host.appendChild(c1);
+
+  // granularity
+  const c2 = el("div", "card");
+  c2.appendChild(el("h2", null, "Granularity"));
+  const distinct = new Set(es.map((e) => e.wordId)).size;
+  const meanRing = es.reduce((a, e) => a + e.ring, 0) / es.length;
+  const g1 = el("div", "stat"); g1.append(el("span", "v", String(distinct)), el("span", "k", "distinct words used"));
+  const g2 = el("div", "stat"); g2.append(el("span", "v", meanRing.toFixed(1)), el("span", "k", "average depth reached (1–4)"));
+  c2.append(g1, g2);
+  c2.appendChild(el("p", "note-s", "Naming feelings more precisely is the thing this app is actually for. These two numbers are how you'd know it's working."));
+  host.appendChild(c2);
+
+  // time of day
+  const c3 = el("div", "card");
+  c3.appendChild(el("h2", null, "Time of day"));
+  if (es.length < 20) {
+    c3.appendChild(el("p", "need", `Needs 20 entries in range — ${20 - es.length} to go.`));
+  } else {
+    const hours = Array.from({ length: 24 }, () => ({}));
+    for (const e of es) { const h = new Date(e.ts).getHours(); hours[h][e.path[0]] = (hours[h][e.path[0]] ?? 0) + 1; }
+    const hmax = Math.max(...hours.map((h) => Object.values(h).reduce((a, b) => a + b, 0)), 1);
+    const wrap = el("div", "hours");
+    hours.forEach((h) => {
+      const tot = Object.values(h).reduce((a, b) => a + b, 0);
+      const bar = el("div", "hbar");
+      bar.style.height = Math.max(2, (tot / hmax) * 100) + "%";
+      for (const f of FAMILIES) if (h[f]) { const s = el("div", "hseg"); s.style.height = (h[f] / tot) * 100 + "%"; s.style.background = col(f); bar.appendChild(s); }
+      wrap.appendChild(bar);
+    });
+    c3.appendChild(wrap);
+    const ax = el("div", "hax");
+    ax.append(el("span", null, "12a"), el("span", null, "6a"), el("span", null, "noon"), el("span", null, "6p"), el("span", null, "11p"));
+    c3.appendChild(ax);
+  }
+  host.appendChild(c3);
+
+  // triggers
+  const c4 = el("div", "card");
+  c4.appendChild(el("h2", null, "After a trigger"));
+  const groups = new Map();
+  for (const e of es) { const k = e.trigger.trim().toLowerCase(); if (!k) continue; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(e); }
+  const shown = [...groups.values()].filter((g) => g.length >= 5).sort((a, b) => b.length - a.length).slice(0, 4);
+  if (!shown.length) {
+    c4.appendChild(el("p", "need", "A trigger appears here once you've logged it 5 times. Reusing the same words is what makes this work."));
+  } else {
+    for (const g of shown) {
+      const blk = el("div", "trg");
+      const th = el("div", "th");
+      th.append(el("span", null, g[0].trigger.trim()), el("span", "n", `${g.length} entries`));
+      blk.appendChild(th);
+      const tally = new Map();
+      for (const e of g) tally.set(e.wordId, (tally.get(e.wordId) ?? 0) + 1);
+      const rows = [...tally.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4);
+      const tmax = rows[0][1];
+      for (const [wid, n] of rows) {
+        const e0 = g.find((x) => x.wordId === wid);
+        const r = el("div", "brow");
+        r.appendChild(el("span", null, N.get(wid) ? N.get(wid).label : wid));
+        const tr = el("div", "btrack"), fi = el("div", "bfill");
+        fi.style.width = (n / tmax) * 100 + "%"; fi.style.background = col(e0.path[0]);
+        tr.appendChild(fi); r.appendChild(tr);
+        r.appendChild(el("span", "bnum", String(n)));
+        blk.appendChild(r);
+      }
+      c4.appendChild(blk);
+    }
+  }
+  host.appendChild(c4);
+}
+
+/* ══ data screen ═══════════════════════════════════════════════════ */
+function dl(name, text, type) {
+  const b = new Blob([text], { type });
+  const u = URL.createObjectURL(b);
+  const a = document.createElement("a");
+  a.href = u; a.download = name; document.body.appendChild(a); a.click();
+  a.remove(); setTimeout(() => URL.revokeObjectURL(u), 1000);
+}
+const stamp = () => dstr(new Date().toISOString());
+document.getElementById("ex-json").addEventListener("click", () => {
+  dl(`feeling-wheel-${stamp()}.json`, JSON.stringify({ version: 1, exported: new Date().toISOString(), entries: ENTRIES }, null, 2), "application/json");
+  toast("Exported");
+});
+document.getElementById("ex-csv").addEventListener("click", () => {
+  const q = (v) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+  const rows = ENTRIES.map((e) => [e.id, e.ts, e.wordId, e.path.join(" > "), e.ring, e.intensity, e.trigger, e.note].map((x) => q(String(x))).join(","));
+  dl(`feeling-wheel-${stamp()}.csv`, ["id,ts,wordId,path,ring,intensity,trigger,note", ...rows].join("\n"), "text/csv");
+  toast("Exported");
+});
+document.getElementById("im-btn").addEventListener("click", () => document.getElementById("im-file").click());
+document.getElementById("im-file").addEventListener("change", async (e) => {
+  const f = e.target.files[0]; if (!f) return;
+  try {
+    const data = JSON.parse(await f.text());
+    const list = Array.isArray(data) ? data : data.entries;
+    if (!Array.isArray(list)) throw new Error("shape");
+    let added = 0, skipped = 0;
+    for (const x of list) {
+      if (!x || !x.id || !x.ts || !Array.isArray(x.path)) { skipped++; continue; }
+      if (ENTRIES.some((y) => y.id === x.id)) { skipped++; continue; }
+      ENTRIES.push(x); added++;
+    }
+    save(); refresh();
+    toast(`Added ${added}, skipped ${skipped}`);
+  } catch {
+    toast("That file couldn't be read. Pick one exported from this app.");
+  }
+  e.target.value = "";
+});
+document.getElementById("wipe").addEventListener("click", () => {
+  if (!confirm(`Delete all ${ENTRIES.length} entries? Export first if you want to keep them. This cannot be undone.`)) return;
+  ENTRIES = []; save(); refresh(); toast("All entries deleted");
+});
+
+/* ══ nav ═══════════════════════════════════════════════════════════ */
+document.querySelector(".tabs").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-go]"); if (!b) return;
+  document.querySelectorAll(".tabs button").forEach((x) => x.setAttribute("aria-current", String(x === b)));
+  document.querySelectorAll(".screen").forEach((s) => s.classList.toggle("on", s.id === "s-" + b.dataset.go));
+  window.scrollTo(0, 0);
+  if (b.dataset.go === "month") drawMonth();
+  if (b.dataset.go === "pat") drawPatterns();
+});
+
+/* ══ boot ══════════════════════════════════════════════════════════ */
+function refresh() {
+  document.getElementById("count").textContent = `${ENTRIES.length} ${ENTRIES.length === 1 ? "entry" : "entries"}`;
+  document.getElementById("d-count").textContent = String(ENTRIES.length);
+  drawWheel(); drawRecents();
+  if (document.getElementById("s-month").classList.contains("on")) drawMonth();
+  if (document.getElementById("s-pat").classList.contains("on")) drawPatterns();
+}
+refresh();
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", refresh);
+new MutationObserver(refresh).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+</script>
