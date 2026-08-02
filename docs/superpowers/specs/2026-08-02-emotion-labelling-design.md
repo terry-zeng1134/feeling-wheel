@@ -67,6 +67,36 @@ this point rather than from scratch:
    times a month — the paid tier costs cents, which likely makes it the correct
    choice for anything richer than aggregates.
 
+**Preferred v2 approach: Apple's on-device model, not a hosted API.**
+
+Apple's **Foundation Models framework** (WWDC 2025) exposes the on-device
+Apple Intelligence model (~3B parameters) to third-party apps. If it can be
+used, every objection above disappears: nothing leaves the device, so the
+payload question — the hardest part of the hosted design — stops existing, and
+notes can be included freely. No API key, no cost, no terms to verify.
+
+Note that **Siri is not the mechanism.** SiriKit and App Intents let an app
+expose actions *to* Siri; there is no interface for asking Siri to generate over
+your data. Foundation Models is the relevant framework.
+
+Three constraints govern it:
+
+- **It is Swift-only.** There is no WebKit or JavaScript binding, so a PWA
+  cannot reach it, and on iOS every browser is WebKit — Chrome's Prompt API is
+  not a workaround. Reaching it means a **Capacitor shell plus a small Swift
+  plugin** bridging the model to JS. The web codebase is unaffected; the wrapper
+  is additive, only the insights feature depends on it, and on the web build
+  insights are simply absent.
+- **Device floor.** Apple Intelligence requires iPhone 15 Pro or later. On older
+  hardware the feature must degrade to *absent*, never to broken.
+- **The model is small.** A 3B model summarises data handed to it well and
+  analyses poorly. Given §6's "counts, never verdicts" stance that ceiling is
+  arguably correct — it is far less inclined to manufacture causal claims than a
+  frontier model. Design the prompt to describe, not to conclude.
+
+Verify the framework's current capabilities and device requirements at build
+time; this area moves quickly.
+
 Design constraints already settled, should this be built:
 
 - Generation is **user-initiated per period**, never automatic or on a schedule.
