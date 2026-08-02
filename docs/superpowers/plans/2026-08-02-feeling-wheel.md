@@ -32,16 +32,17 @@
 | `src/taxonomy/types.ts` | `Ring`, `Family`, `Source`, `WordNode` types |
 | `src/taxonomy/willcox.ts` | Rings 1–3, the published 114-word tree |
 | `src/taxonomy/extension.ts` | Ring 4, cited extension words |
-| `src/taxonomy/index.ts` | Tree assembly + lookup: `getNode`, `childrenOf`, `pathOf`, `searchWords` |
+| `src/taxonomy/definitions.ts` | Authored differential definitions, rings 3–4 |
+| `src/taxonomy/index.ts` | Tree assembly + lookup: `getNode`, `childrenOf`, `pathOf`, `searchWords`, `nearestNeighbours` |
 | `src/taxonomy/palette.ts` | `FAMILY_ANGLE`, `FAMILY_COLOR` — the validated constants |
 | `src/store/types.ts` | `Entry` |
 | `src/store/db.ts` | IndexedDB CRUD + queries |
 | `src/store/transfer.ts` | Export/import JSON + CSV export |
-| `src/geometry/arc.ts` | `arcPath`, `sectorForIndex` — pure SVG path math |
+| `src/geometry/arc.ts` | `polar`, `wedgePath`, `sectorForIndex`, `fanAngles` — pure SVG path math |
 | `src/wheel/wheel.ts` | Radial capture control; emits selected node id |
 | `src/glyph/dayGlyph.ts` | `spokesForDay`, `renderDayGlyph` |
 | `src/review/aggregate.ts` | `byDay`, `familyRollup`, `timeOfDay`, `triggerBreakdown`, `granularity` |
-| `src/app/screens/*.ts` | Capture, detail, month, review, settings screens |
+| `src/app/screens/*.ts` | Capture, detail, month, timeline, review, settings screens |
 | `src/app/router.ts` | Hash routing |
 | `src/styles/tokens.css` | Color tokens for both themes |
 
@@ -177,6 +178,22 @@ export type Family = "mad" | "sad" | "scared" | "joyful" | "powerful" | "peacefu
 export type Ring = 1 | 2 | 3 | 4;
 export type Source = "willcox-1982" | "shaver-1987" | "cowen-keltner-2017";
 
+/** A distinction against one specific other word. `vs` is that word's id. */
+export interface Contrast {
+  vs: string;
+  note: string;
+}
+
+/**
+ * Differential definition (spec §3.4). Authored, never attributed to the
+ * cited sources — `source` here is deliberately separate from WordNode.source.
+ */
+export interface Definition {
+  gloss: string;
+  contrasts: Contrast[];
+  source: "authored";
+}
+
 export interface WordNode {
   id: string;
   label: string;
@@ -185,6 +202,7 @@ export interface WordNode {
   family: Family;
   source: Source;
   children: string[];
+  definition?: Definition; // rings 3 and 4 only
 }
 
 /** Raw authoring shape: [ring2 label, [ring3 label, ring3 label]][] */
@@ -577,7 +595,214 @@ git commit -m "feat(taxonomy): cited ring-4 extension from shaver 1987 / cowen-k
 
 ---
 
-## Task 5: Word search
+## Task 5: Differential definitions
+
+**Files:**
+- Create: `src/taxonomy/definitions.ts`
+- Modify: `src/taxonomy/index.ts` (attach definitions during `build()`)
+- Test: `src/taxonomy/definitions.test.ts`
+
+**Interfaces:**
+- Consumes: `Definition`, `Contrast`, `WordNode` from Task 2; the ring-4 tree from Task 4
+- Produces:
+  - `DEFINITIONS: Record<string, Definition>` keyed by word id
+  - `nearestNeighbours(id: string): string[]` — exported from `index.ts`; the legal contrast targets for a word
+  - `WordNode.definition` populated on every ring-3 and ring-4 node
+
+Per spec §3.4: rings 3 and 4 only, differential rather than standalone, two to
+three contrasts each, `source: "authored"` always. Contrast targets are the
+word's siblings, plus its parent when the word is ring 4.
+
+- [ ] **Step 1: Write the failing test**
+
+```ts
+import { describe, expect, it } from "vitest";
+import { allNodes, getNode, nearestNeighbours } from "./index";
+
+const defined = () => allNodes().filter((n) => n.ring === 3 || n.ring === 4);
+
+describe("nearestNeighbours", () => {
+  it("gives a ring-3 word its siblings only", () => {
+    const n = nearestNeighbours("embarrassed");
+    expect(n).toContain("devastated");
+    expect(n).not.toContain("hurt");
+  });
+
+  it("gives a ring-4 word its siblings and its parent", () => {
+    const kids = getNode("embarrassed")!.children;
+    if (kids.length === 0) return;
+    const n = nearestNeighbours(kids[0]!);
+    expect(n).toContain("embarrassed");
+  });
+
+  it("never includes the word itself", () => {
+    for (const n of defined()) expect(nearestNeighbours(n.id)).not.toContain(n.id);
+  });
+});
+
+describe("definitions", () => {
+  it("defines every ring-3 and ring-4 word", () => {
+    for (const n of defined()) {
+      expect(n.definition, `missing definition: ${n.id}`).toBeDefined();
+    }
+  });
+
+  it("defines no ring-1 or ring-2 word", () => {
+    for (const n of allNodes().filter((x) => x.ring <= 2)) {
+      expect(n.definition).toBeUndefined();
+    }
+  });
+
+  it("marks every definition as authored", () => {
+    for (const n of defined()) expect(n.definition!.source).toBe("authored");
+  });
+
+  it("gives every definition a non-trivial gloss", () => {
+    for (const n of defined()) {
+      expect(n.definition!.gloss.length, `too short: ${n.id}`).toBeGreaterThan(20);
+    }
+  });
+
+  it("gives every definition two or three contrasts", () => {
+    for (const n of defined()) {
+      const c = n.definition!.contrasts.length;
+      expect(c, `${n.id} has ${c} contrasts`).toBeGreaterThanOrEqual(2);
+      expect(c, `${n.id} has ${c} contrasts`).toBeLessThanOrEqual(3);
+    }
+  });
+
+  it("only contrasts against real words", () => {
+    for (const n of defined()) {
+      for (const c of n.definition!.contrasts) {
+        expect(getNode(c.vs), `${n.id} contrasts unknown word ${c.vs}`).toBeDefined();
+      }
+    }
+  });
+
+  it("only contrasts against nearest neighbours", () => {
+    for (const n of defined()) {
+      const legal = nearestNeighbours(n.id);
+      for (const c of n.definition!.contrasts) {
+        expect(legal, `${n.id} contrasts distant word ${c.vs}`).toContain(c.vs);
+      }
+    }
+  });
+
+  it("keeps contrasts symmetric", () => {
+    for (const n of defined()) {
+      for (const c of n.definition!.contrasts) {
+        const back = getNode(c.vs)!.definition;
+        if (!back) continue;
+        expect(
+          back.contrasts.some((b) => b.vs === n.id),
+          `${n.id} contrasts ${c.vs} but not the reverse`
+        ).toBe(true);
+      }
+    }
+  });
+
+  it("never repeats a contrast target within one definition", () => {
+    for (const n of defined()) {
+      const targets = n.definition!.contrasts.map((c) => c.vs);
+      expect(new Set(targets).size).toBe(targets.length);
+    }
+  });
+});
+```
+
+- [ ] **Step 2: Run it and confirm it fails**
+
+Run: `npx vitest run src/taxonomy/definitions.test.ts`
+Expected: FAIL — `nearestNeighbours` is not exported and no node has a definition.
+
+- [ ] **Step 3: Add `nearestNeighbours` to `src/taxonomy/index.ts`**
+
+```ts
+export function nearestNeighbours(id: string): string[] {
+  const n = nodes.get(id);
+  if (!n || n.parent === null) return [];
+  const siblings = childrenOf(n.parent).map((s) => s.id).filter((s) => s !== id);
+  return n.ring === 4 ? [...siblings, n.parent] : siblings;
+}
+```
+
+- [ ] **Step 4: Author `src/taxonomy/definitions.ts`**
+
+```ts
+import type { Definition } from "./types";
+
+/**
+ * Differential definitions for rings 3 and 4 (spec §3.4).
+ * Authored — NOT from Willcox, Shaver, or Cowen & Keltner. The gloss says what
+ * the feeling is; the contrasts say why it is not the word beside it.
+ * Contrast targets must be nearest neighbours; contrasts must be symmetric.
+ */
+export const DEFINITIONS: Record<string, Definition> = {
+  embarrassed: {
+    gloss: "Exposed in a small way, in front of people whose opinion you want. The stakes are social, not moral.",
+    contrasts: [
+      { vs: "devastated", note: "Devastation is loss you have to rebuild from; embarrassment passes once attention moves on." },
+      { vs: "mortified", note: "Mortification is exposure that feels unsurvivable, not merely awkward." },
+      { vs: "humiliated", note: "Humiliation is something another person did to you on purpose." },
+    ],
+    source: "authored",
+  },
+  mortified: {
+    gloss: "Exposure so total that you want to stop existing for a moment. The reaction is out of proportion to the audience.",
+    contrasts: [
+      { vs: "embarrassed", note: "Embarrassment is survivable and social; mortification feels like it isn't." },
+      { vs: "humiliated", note: "Humiliation needs someone to have done it to you; mortification can be entirely self-inflicted." },
+    ],
+    source: "authored",
+  },
+  humiliated: {
+    gloss: "Brought low in front of others by someone who meant to do it. The injury is to standing, not just to comfort.",
+    contrasts: [
+      { vs: "embarrassed", note: "Embarrassment has no author; humiliation does." },
+      { vs: "mortified", note: "Mortification is about your own exposure; humiliation is about someone else's power." },
+    ],
+    source: "authored",
+  },
+  // ... author the remaining ring-3 and ring-4 words to this standard.
+};
+```
+
+**Note for the implementer:** this file is the second reviewable vocabulary
+artifact (spec §10). Produce it as its own commit and surface the full text for
+review before continuing. Three rules the tests enforce but that are easy to
+satisfy badly:
+
+1. **A gloss that restates the word is a failure.** "Embarrassed: feeling embarrassment" passes the length check and helps nobody.
+2. **A contrast must state a distinction, not a comparison of intensity.** "More intense than X" is almost never the real difference; look for a difference in *what happened* — who caused it, what is at stake, whether it is survivable.
+3. **Symmetry is enforced, so write pairs together.** Do not write all of `mad` and then discover the reverse contrasts contradict what you wrote an hour ago.
+
+- [ ] **Step 5: Attach definitions in `build()`**
+
+At the end of `build()` in `src/taxonomy/index.ts`:
+
+```ts
+  for (const n of nodes.values()) {
+    if (n.ring === 3 || n.ring === 4) n.definition = DEFINITIONS[n.id];
+  }
+```
+
+Add the import: `import { DEFINITIONS } from "./definitions";`
+
+- [ ] **Step 6: Run the tests and confirm they pass**
+
+Run: `npx vitest run src/taxonomy`
+Expected: PASS — Tasks 2 and 4's tests plus this task's 12.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add src/taxonomy
+git commit -m "feat(taxonomy): authored differential definitions for rings 3 and 4"
+```
+
+---
+
+## Task 6: Word search
 
 **Files:**
 - Modify: `src/taxonomy/index.ts`
@@ -656,7 +881,7 @@ git commit -m "feat(taxonomy): word search with prefix ranking"
 
 ---
 
-## Task 6: Entry store
+## Task 7: Entry store
 
 **Files:**
 - Create: `src/store/types.ts`, `src/store/db.ts`
@@ -864,14 +1089,14 @@ git commit -m "feat(store): indexeddb entry store with range, recent, and trigge
 
 ---
 
-## Task 7: Export and import
+## Task 8: Export and import
 
 **Files:**
 - Create: `src/store/transfer.ts`
 - Test: `src/store/transfer.test.ts`
 
 **Interfaces:**
-- Consumes: `Entry`, `allEntries`, `putEntry` from Task 6
+- Consumes: `Entry`, `allEntries`, `putEntry` from Task 7
 - Produces:
   - `exportJson(entries: Entry[]): string`
   - `exportCsv(entries: Entry[]): string`
@@ -996,7 +1221,7 @@ git commit -m "feat(store): json/csv export and json import with duplicate skip"
 
 ---
 
-## Task 8: Arc geometry
+## Task 9: Arc geometry
 
 **Files:**
 - Create: `src/geometry/arc.ts`
@@ -1006,15 +1231,23 @@ git commit -m "feat(store): json/csv export and json import with duplicate skip"
 - Consumes: nothing
 - Produces:
   - `polar(cx: number, cy: number, r: number, deg: number): { x: number; y: number }` — 0° is 12 o'clock, clockwise
-  - `arcPath(cx: number, cy: number, rInner: number, rOuter: number, a0: number, a1: number): string`
+  - `wedgePath(cx: number, cy: number, rInner: number, rOuter: number, centreDeg: number, spanDeg: number, gapPx: number): string`
   - `sectorForIndex(i: number, n: number): { a0: number; a1: number }`
   - `fanAngles(centerDeg: number, spanDeg: number, count: number): number[]`
+
+**Why `wedgePath` takes a gap in pixels, not an angular pad.** Arc length is
+`r · θ`, so a constant angular pad produces a **V-shaped** gap — narrow at the
+hub, flaring at the rim. On a wheel with a 56px inner and 127px outer radius
+that is a 2.3× difference, and it reads as broken. The angular pad must shrink
+as radius grows: `padDeg(r) = (gap / 2) / r · 180 / π`. Inner and outer edges
+therefore start at different angles. This was found by building the mockup; do
+not "simplify" it back to a single pad.
 
 - [ ] **Step 1: Write the failing test**
 
 ```ts
 import { describe, expect, it } from "vitest";
-import { arcPath, fanAngles, polar, sectorForIndex } from "./arc";
+import { fanAngles, polar, sectorForIndex, wedgePath } from "./arc";
 
 const close = (a: number, b: number) => expect(Math.abs(a - b)).toBeLessThan(1e-6);
 
@@ -1041,14 +1274,47 @@ describe("sectorForIndex", () => {
   });
 });
 
-describe("arcPath", () => {
+describe("wedgePath", () => {
+  const nums = (d: string) => d.match(/-?\d+\.?\d*/g)!.map(Number);
+  // M x y A rx ry rot lg sweep x y L x y A rx ry rot lg sweep x y Z
+  const corners = (d: string) => {
+    const n = nums(d);
+    return {
+      outStart: [n[0]!, n[1]!], outEnd: [n[7]!, n[8]!],
+      inStart: [n[9]!, n[10]!], inEnd: [n[16]!, n[17]!],
+    };
+  };
+  const dist = (a: number[], b: number[]) => Math.hypot(a[0]! - b[0]!, a[1]! - b[1]!);
+
   it("emits a closed path", () => {
-    expect(arcPath(50, 50, 20, 40, 0, 60)).toMatch(/^M .*Z$/);
+    expect(wedgePath(50, 50, 20, 40, 0, 60, 2)).toMatch(/^M .*Z$/);
   });
 
   it("sets the large-arc flag past 180 degrees", () => {
-    expect(arcPath(50, 50, 20, 40, 0, 200)).toContain(" 1 1 ");
-    expect(arcPath(50, 50, 20, 40, 0, 100)).toContain(" 0 1 ");
+    expect(wedgePath(50, 50, 20, 40, 0, 200, 2)).toContain(" 1 1 ");
+    expect(wedgePath(50, 50, 20, 40, 0, 100, 2)).toContain(" 0 1 ");
+  });
+
+  it("keeps the gap the same width at the hub and at the rim", () => {
+    const a = corners(wedgePath(131, 131, 56, 127, 0, 60, 3));
+    const b = corners(wedgePath(131, 131, 56, 127, 60, 60, 3));
+    expect(dist(a.outEnd, b.outStart)).toBeCloseTo(3, 1);
+    expect(dist(a.inStart, b.inEnd)).toBeCloseTo(3, 1);
+  });
+
+  it("scales the gap with the requested pixel width", () => {
+    const a = corners(wedgePath(131, 131, 56, 127, 0, 60, 8));
+    const b = corners(wedgePath(131, 131, 56, 127, 60, 60, 8));
+    expect(dist(a.outEnd, b.outStart)).toBeCloseTo(8, 1);
+  });
+
+  it("puts all four corners on the requested radii", () => {
+    const c = corners(wedgePath(131, 131, 56, 127, 120, 60, 3));
+    const r = (p: number[]) => Math.hypot(p[0]! - 131, p[1]! - 131);
+    expect(r(c.outStart)).toBeCloseTo(127, 3);
+    expect(r(c.outEnd)).toBeCloseTo(127, 3);
+    expect(r(c.inStart)).toBeCloseTo(56, 3);
+    expect(r(c.inEnd)).toBeCloseTo(56, 3);
   });
 });
 
@@ -1092,14 +1358,23 @@ export function sectorForIndex(i: number, n: number): { a0: number; a1: number }
   return { a0: center - span / 2, a1: center + span / 2 };
 }
 
-export function arcPath(
-  cx: number, cy: number, rInner: number, rOuter: number, a0: number, a1: number
+/**
+ * A wedge separated from its neighbours by a gap of constant PIXEL width.
+ * Arc length is r·θ, so a fixed angular pad flares at the rim; the pad has to
+ * shrink as the radius grows. Inner and outer edges start at different angles.
+ */
+export function wedgePath(
+  cx: number, cy: number, rInner: number, rOuter: number,
+  centreDeg: number, spanDeg: number, gapPx: number
 ): string {
-  const large = Math.abs(a1 - a0) > 180 ? 1 : 0;
-  const o0 = polar(cx, cy, rOuter, a0);
-  const o1 = polar(cx, cy, rOuter, a1);
-  const i1 = polar(cx, cy, rInner, a1);
-  const i0 = polar(cx, cy, rInner, a0);
+  const pad = (r: number) => ((gapPx / 2) / r) * (180 / Math.PI);
+  const pi = pad(rInner), po = pad(rOuter);
+  const half = spanDeg / 2;
+  const o0 = polar(cx, cy, rOuter, centreDeg - half + po);
+  const o1 = polar(cx, cy, rOuter, centreDeg + half - po);
+  const i1 = polar(cx, cy, rInner, centreDeg + half - pi);
+  const i0 = polar(cx, cy, rInner, centreDeg - half + pi);
+  const large = spanDeg > 180 ? 1 : 0;
   return [
     `M ${o0.x} ${o0.y}`,
     `A ${rOuter} ${rOuter} 0 ${large} 1 ${o1.x} ${o1.y}`,
@@ -1122,7 +1397,7 @@ export function fanAngles(centerDeg: number, spanDeg: number, count: number): nu
 - [ ] **Step 4: Run the tests and confirm they pass**
 
 Run: `npx vitest run src/geometry`
-Expected: PASS, 9 tests.
+Expected: PASS, 12 tests.
 
 - [ ] **Step 5: Commit**
 
@@ -1133,14 +1408,14 @@ git commit -m "feat(geometry): polar, arc path, sector, and deterministic fan an
 
 ---
 
-## Task 9: Day glyph
+## Task 10: Day glyph
 
 **Files:**
 - Create: `src/glyph/dayGlyph.ts`
 - Test: `src/glyph/dayGlyph.test.ts`
 
 **Interfaces:**
-- Consumes: `Entry` (Task 6), `FAMILY_ANGLE` / `FAMILY_COLOR` / `CYCLE` (Task 3), `polar` / `fanAngles` (Task 8)
+- Consumes: `Entry` (Task 7), `FAMILY_ANGLE` / `FAMILY_COLOR` / `CYCLE` (Task 3), `polar` / `fanAngles` (Task 9)
 - Produces:
   - `interface Spoke { entryId: string; family: Family; angleDeg: number; lengthFrac: number }`
   - `spokesForDay(entries: Entry[]): Spoke[]`
@@ -1332,14 +1607,14 @@ git commit -m "feat(glyph): radial day glyph — angle=family, length=intensity,
 
 ---
 
-## Task 10: Review aggregations
+## Task 11: Review aggregations
 
 **Files:**
 - Create: `src/review/aggregate.ts`
 - Test: `src/review/aggregate.test.ts`
 
 **Interfaces:**
-- Consumes: `Entry` (Task 6), `Family` / `CYCLE` (Tasks 2–3)
+- Consumes: `Entry` (Task 7), `Family` / `CYCLE` (Tasks 2–3)
 - Produces:
   - `byDay(entries: Entry[]): { date: string; entries: Entry[] }[]` — `date` is local `YYYY-MM-DD`, ascending
   - `familyRollup(entries: Entry[]): { family: Family; count: number; topWords: { wordId: string; count: number }[] }[]` — descending by count
@@ -1566,14 +1841,14 @@ git commit -m "feat(review): pure aggregations for day, family, hour, trigger, g
 
 ---
 
-## Task 11: The wheel control
+## Task 12: The wheel control
 
 **Files:**
 - Create: `src/wheel/wheel.ts`, `src/styles/tokens.css`
 - Test: `src/wheel/wheel.test.ts`
 
 **Interfaces:**
-- Consumes: `childrenOf` / `getNode` / `pathOf` (Tasks 2, 4), `FAMILY_COLOR` (Task 3), `arcPath` / `sectorForIndex` (Task 8)
+- Consumes: `childrenOf` / `getNode` / `pathOf` (Tasks 2, 4), `WordNode.definition` (Task 5), `FAMILY_COLOR` (Task 3), `wedgePath` / `sectorForIndex` (Task 9)
 - Produces:
   - `interface WheelOptions { onCommit: (nodeId: string) => void; size?: number; theme?: "light" | "dark" }`
   - `createWheel(opts: WheelOptions): { el: HTMLElement; focus(nodeId: string | null): void; current(): string | null }`
@@ -1672,8 +1947,10 @@ Expected: FAIL — `./wheel` does not exist.
 Build to the test above. Required structure:
 
 - Root `HTMLElement` containing a breadcrumb `<nav>` and an `<svg>`.
-- Wedges are `<path data-node-id="…" role="button" tabindex="0" aria-label="…">`, filled with `FAMILY_COLOR[family][theme]`, laid out via `sectorForIndex(i, children.length)` and `arcPath`.
+- Wedges are `<path data-node-id="…" role="button" tabindex="0" aria-label="…">`, filled with `FAMILY_COLOR[family][theme]`, laid out via `wedgePath(cx, cy, rInner, rOuter, centre, span, 3)`. Do not stroke the wedges — the 3px gap is geometric, and a stroke doubles it.
+- Label ink is chosen per wedge from the fill's relative luminance, not hardcoded per family — the same wedge needs different ink in light and dark. Set it as a `fill` attribute and make sure no CSS rule sets `fill` on the label class, since CSS beats presentation attributes.
 - Ring-4 wedges additionally carry `data-extension="true"`.
+- Ring-3 and ring-4 wedges support **long-press (500ms) or focus + `?`** to open a definition sheet showing `node.definition.gloss` and its contrasts, labelled "authored". Dismissing returns to the wheel with nothing selected. A plain tap still descends or commits — reading is opt-in and never blocks a save (spec §5.5).
 - The hub is a `<g data-hub>` holding a circle and the current node's label; it is `role="button"` and `tabindex="0"` only when `current() !== null`.
 - `focus(nodeId)` sets the view to that node's children and rebuilds the breadcrumb from `pathOf(nodeId)`; `focus(null)` returns to the roots.
 - Clicking a wedge with children calls `focus(id)`; clicking a childless wedge calls `onCommit(id)`.
@@ -1699,14 +1976,14 @@ git commit -m "feat(wheel): zooming radial capture control, hub commits and wedg
 
 ---
 
-## Task 12: Capture screen and detail form
+## Task 13: Capture screen and detail form
 
 **Files:**
 - Create: `src/app/screens/capture.ts`, `src/app/screens/detail.ts`
 - Test: `src/app/screens/detail.test.ts`
 
 **Interfaces:**
-- Consumes: `createWheel` (Task 11), `putEntry` / `triggerSuggestions` / `recentWordIds` (Task 6), `pathOf` / `getNode` / `searchWords` (Tasks 2, 5)
+- Consumes: `createWheel` (Task 12), `putEntry` / `triggerSuggestions` / `recentWordIds` (Task 7), `pathOf` / `getNode` / `searchWords` (Tasks 2, 6)
 - Produces:
   - `renderCapture(root: HTMLElement): void`
   - `buildEntry(nodeId: string, intensity: Intensity, trigger: string, note: string, now?: Date): Entry`
@@ -1786,6 +2063,8 @@ Expected: PASS, 6 tests.
 
 A single screen showing the committed word (with its family color and, for ring 4, its citation), a 1–5 intensity control, a trigger input backed by `triggerSuggestions`, an optional note textarea, and Save. Save calls `putEntry(buildEntry(...))` and returns to capture. The intensity control must be operable by keyboard.
 
+Below the word, render `node.definition` when present (rings 3 and 4): the gloss always visible, the contrasts collapsed behind a "how this differs" `<details>` toggle, and the whole block labelled `authored` so it is never mistaken for Willcox's or Shaver's words. The word itself is tappable to return to the wheel at that position — a definition that changes your mind should be one tap from acting on it. Rings 1–2 show nothing here.
+
 - [ ] **Step 6: Build the capture screen**
 
 `renderCapture` mounts `createWheel({ onCommit })` where `onCommit` opens the detail form. Above the wheel: a search input driving `searchWords` (selecting a result commits it directly), and a row of chips from `recentWordIds(6)` (tapping a chip commits it directly).
@@ -1803,24 +2082,26 @@ git commit -m "feat(app): capture screen with wheel, search, recents, and detail
 
 ---
 
-## Task 13: Month view and review screens
+## Task 14: Month view and review screens
 
 **Files:**
 - Create: `src/app/screens/month.ts`, `src/app/screens/review.ts`, `src/app/router.ts`
 - Test: `src/app/screens/month.test.ts`
 
 **Interfaces:**
-- Consumes: `renderDayGlyph` (Task 9), all of `review/aggregate` (Task 10), `entriesBetween` (Task 6)
+- Consumes: `renderDayGlyph` (Task 10), all of `review/aggregate` (Task 11), `entriesBetween` / `deleteEntry` / `putEntry` (Task 7), `FAMILY_COLOR` (Task 3)
 - Produces:
   - `monthGrid(year: number, month: number, entries: Entry[]): { date: string; entries: Entry[]; inMonth: boolean }[]`
+  - `timelinePage(entries: Entry[], page: number, perPage?: number): { date: string; entries: Entry[] }[]` — newest day first, empty days omitted, entries within a day newest first
   - `renderMonth(root: HTMLElement, year: number, month: number): Promise<void>`
+  - `renderTimeline(root: HTMLElement): Promise<void>`
   - `renderReview(root: HTMLElement): Promise<void>`
 
 - [ ] **Step 1: Write the failing test**
 
 ```ts
 import { describe, expect, it } from "vitest";
-import { monthGrid } from "./month";
+import { monthGrid, timelinePage } from "./month";
 import type { Entry } from "../../store/types";
 
 const e = (ts: string): Entry => ({
@@ -1848,6 +2129,42 @@ describe("monthGrid", () => {
     expect(monthGrid(2026, 8, []).every((c) => c.entries.length === 0)).toBe(true);
   });
 });
+
+describe("timelinePage", () => {
+  const days = (n: number) =>
+    Array.from({ length: n }, (_, i) =>
+      e(`2026-08-${String(i + 1).padStart(2, "0")}T12:00:00.000Z`));
+
+  it("returns [] for no entries", () => {
+    expect(timelinePage([], 0)).toEqual([]);
+  });
+
+  it("orders days newest first", () => {
+    const p = timelinePage(days(3), 0);
+    expect(p.map((d) => d.date)).toEqual(["2026-08-03", "2026-08-02", "2026-08-01"]);
+  });
+
+  it("orders entries within a day newest first", () => {
+    const p = timelinePage([
+      e("2026-08-02T09:00:00.000Z"), e("2026-08-02T17:00:00.000Z"),
+    ], 0);
+    expect(p[0]!.entries[0]!.ts).toBe("2026-08-02T17:00:00.000Z");
+  });
+
+  it("omits days with no entries", () => {
+    const p = timelinePage([e("2026-08-01T12:00:00.000Z"), e("2026-08-05T12:00:00.000Z")], 0);
+    expect(p.map((d) => d.date)).toEqual(["2026-08-05", "2026-08-01"]);
+  });
+
+  it("pages by day, not by entry", () => {
+    expect(timelinePage(days(20), 0, 14)).toHaveLength(14);
+    expect(timelinePage(days(20), 1, 14)).toHaveLength(6);
+  });
+
+  it("returns [] past the last page", () => {
+    expect(timelinePage(days(3), 5, 14)).toEqual([]);
+  });
+});
 ```
 
 - [ ] **Step 2: Run it and confirm it fails**
@@ -1855,34 +2172,67 @@ describe("monthGrid", () => {
 Run: `npx vitest run src/app/screens/month.test.ts`
 Expected: FAIL — `./month` does not exist.
 
-- [ ] **Step 3: Implement `monthGrid`, then the screens**
+- [ ] **Step 3: Implement `monthGrid` and `timelinePage`**
 
-`monthGrid` pads to whole weeks from Monday. `renderMonth` renders one `renderDayGlyph` per cell, plus a key glyph above the grid showing the six family positions (this is the legend — do not repeat it per cell), and a table view toggle listing the same data. Tapping a day opens its entries with exact values.
+```ts
+export function timelinePage(
+  entries: Entry[], page: number, perPage = 14
+): { date: string; entries: Entry[] }[] {
+  const days = byDay(entries)                       // ascending, empty days absent
+    .map((d) => ({
+      date: d.date,
+      entries: [...d.entries].sort((a, b) => b.ts.localeCompare(a.ts)),
+    }))
+    .reverse();                                     // newest day first
+  return days.slice(page * perPage, (page + 1) * perPage);
+}
+```
 
-`renderReview` renders, in order: family rollup with a 7/30/90-day range control; time of day; trigger breakdown; granularity. Each view below its threshold renders the count of entries still needed instead of a chart — never an empty chart, never a fabricated insight.
+`monthGrid` pads to whole weeks from Monday.
 
 - [ ] **Step 4: Run the tests and confirm they pass**
 
 Run: `npx vitest run src/app/screens/month.test.ts`
-Expected: PASS, 4 tests.
+Expected: PASS, 10 tests.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Build the screens**
+
+`renderMonth` renders one `renderDayGlyph` per cell, plus a key glyph above the
+grid showing the six family positions (this is the legend — do not repeat it per
+cell), and a table view toggle listing the same data.
+
+`renderTimeline` renders directly below the grid **on the same scroll container**
+(spec §6.1a) — not a tab, not a modal. Each day: a header with its date and a
+small glyph, then its entries as time, word in `FAMILY_COLOR`, intensity pips,
+trigger, note. Append the next page when the sentinel element enters the
+viewport via `IntersectionObserver`. Tapping a day in the grid calls
+`scrollIntoView` on that day's header rather than opening anything.
+
+Each entry row carries edit and delete actions — this is the only surface where
+an entry can be changed. Delete asks for confirmation and calls `deleteEntry`.
+
+`renderReview` renders, in order: family rollup with a 7/30/90-day range control;
+time of day; trigger breakdown; granularity. Each view below its threshold
+renders the count of entries still needed instead of a chart — never an empty
+chart, never a fabricated insight.
+
+- [ ] **Step 6: Commit**
 
 ```bash
 git add src/app
-git commit -m "feat(app): month grid of day glyphs and the review screens"
+git commit -m "feat(app): month grid, scrolling timeline feed, and review screens"
 ```
 
 ---
 
-## Task 14: List-mode accessibility fallback
+## Task 15: List-mode accessibility fallback
 
 **Files:**
 - Create: `src/app/screens/listMode.ts`
 - Test: `src/app/screens/listMode.test.ts`
 
 **Interfaces:**
-- Consumes: `childrenOf` / `pathOf` (Task 2), `buildEntry` (Task 12)
+- Consumes: `childrenOf` / `pathOf` (Task 2), `buildEntry` (Task 13)
 - Produces: `renderListMode(root: HTMLElement, onCommit: (nodeId: string) => void): void`
 
 A complete parallel navigation over the identical tree — not a degraded one. A radial control is hostile to screen readers; this is the equal path, reachable from the capture screen and announced.
@@ -1930,6 +2280,8 @@ Expected: FAIL — `./listMode` does not exist.
 
 An ARIA `tree` with `treeitem` rows. Each row carries the word, its family swatch, an expand toggle when it has children, and a "Log this" button (`data-log-id`) so stopping at any level works here too. Ring-4 rows show their citation inline rather than on long-press.
 
+Ring-3 and ring-4 rows render `node.definition.gloss` inline and their contrasts in an expandable region — full text, never truncated. A long-press gesture is unusable on this path, so the definition must be reachable by ordinary sequential navigation (spec §5.5).
+
 - [ ] **Step 4: Run the tests and confirm they pass**
 
 Run: `npx vitest run src/app/screens/listMode.test.ts`
@@ -1944,14 +2296,14 @@ git commit -m "feat(a11y): full list-mode navigation as an equal path to the whe
 
 ---
 
-## Task 15: PWA shell, export UI, and install
+## Task 16: PWA shell, export UI, and install
 
 **Files:**
 - Modify: `vite.config.ts`, `index.html`
 - Create: `src/app/screens/settings.ts`, `public/icon-192.png`, `public/icon-512.png`, `public/apple-touch-icon.png`
 
 **Interfaces:**
-- Consumes: `allEntries` (Task 6), `exportJson` / `exportCsv` / `parseJson` / `importEntries` (Task 7)
+- Consumes: `allEntries` (Task 7), `exportJson` / `exportCsv` / `parseJson` / `importEntries` (Task 8)
 - Produces: a build that installs to the iOS home screen and runs offline
 
 - [ ] **Step 1: Add the PWA plugin to `vite.config.ts`**
@@ -2020,14 +2372,14 @@ git commit -m "feat(pwa): manifest, service worker, ios install, and export/impo
 
 ---
 
-## Task 16: Full-suite verification
+## Task 17: Full-suite verification
 
 **Files:** none
 
 - [ ] **Step 1: Run the whole suite**
 
 Run: `npm test`
-Expected: PASS. Tally: 7 (taxonomy) + 4 (palette) + 5 (extension) + 5 (search) + 7 (store) + 6 (transfer) + 9 (geometry) + 11 (glyph) + 13 (review) + 9 (wheel) + 6 (detail) + 4 (month) + 3 (list mode) = 89 tests.
+Expected: PASS. Tally: 7 (taxonomy) + 4 (palette) + 5 (extension) + 12 (definitions) + 5 (search) + 7 (store) + 6 (transfer) + 12 (geometry) + 11 (glyph) + 13 (review) + 9 (wheel) + 6 (detail) + 10 (month + timeline) + 3 (list mode) = 110 tests.
 
 - [ ] **Step 2: Typecheck**
 
@@ -2057,26 +2409,30 @@ git commit --allow-empty -m "chore: full-suite verification pass"
 | Spec section | Task |
 |---|---|
 | §3.1 Willcox spine | 2 |
-| §3.2 Ring-4 extension + provenance | 4, 11 (extension marking), 14 (citations in list mode) |
-| §4 Data model | 6, 12 (`buildEntry` sets `path` and `ring`) |
-| §5.1 Zooming wheel | 11 |
-| §5.2 Hub commits / wedges descend | 11 |
-| §5.3 Detail screen | 12 |
-| §5.4 Search + recents | 5, 12 |
-| §6.1 Month view | 13 |
-| §6.2 Family rollup | 10, 13 |
-| §6.3 Time of day | 10, 13 |
-| §6.4 Trigger → feeling | 10, 13 |
-| §6.5 Granularity | 10, 13 |
-| §7 Day glyph encoding | 9 |
+| §3.2 Ring-4 extension + provenance | 4, 12 (extension marking), 15 (citations in list mode) |
+| §3.4 Differential definitions | 5 |
+| §4 Data model | 7, 13 (`buildEntry` sets `path` and `ring`) |
+| §5.1 Zooming wheel | 12 |
+| §5.2 Hub commits / wedges descend | 12 |
+| §5.3 Detail screen | 13 |
+| §5.4 Search + recents | 6, 13 |
+| §5.5 Where definitions appear | 12 (long-press sheet), 13 (detail), 15 (list mode) |
+| §6.1 Month view | 14 |
+| §6.1a Timeline feed | 14 (`timelinePage`, `renderTimeline`) |
+| §6.2 Family rollup | 11, 14 |
+| §6.3 Time of day | 11, 14 |
+| §6.4 Trigger → feeling | 11, 14 |
+| §6.5 Granularity | 11, 14 |
+| §7 Day glyph encoding | 10 |
 | §7.2 Valence rotation | 3 |
-| §7.4 Color + legend | 3, 13 |
+| §7.3 Constant-width wedge gaps | 9 (`wedgePath`), 12 |
+| §7.4 Color + legend | 3, 14 |
 | §8 Architecture | 1, and the module split throughout |
-| §8.1 Storage durability / export | 7, 15 |
-| §9 Accessibility | 11 (focus, labels), 9 (aria-label), 13 (table view), 14 (list mode) |
+| §8.1 Storage durability / export | 8, 16 |
+| §9 Accessibility | 12 (focus, labels), 10 (aria-label), 14 (table view), 15 (list mode + full definition text) |
 
 No spec section is unimplemented.
 
-**Placeholder scan:** Two files are authored rather than transcribed here — `willcox.ts` (Task 2 Step 4) and `extension.ts` (Task 4 Step 3). Both are *content* transcription from cited sources, not logic, and both are gated by tests that fail if the content is wrong shape or wrong count. The `mad` family is given in full as the format specimen. Task 4 additionally routes the vocabulary through review before the work continues.
+**Placeholder scan:** Three files are authored rather than transcribed here — `willcox.ts` (Task 2), `extension.ts` (Task 4), and `definitions.ts` (Task 5). All three are *content* rather than logic, each is gated by tests that fail on wrong shape, wrong count, or asymmetric contrasts, and each ships a worked specimen: the `mad` family, the `embarrassed` extension, and the embarrassed/mortified/humiliated definition triad. Tasks 4 and 5 both route their output through review before work continues.
 
-**Type consistency:** `Entry`, `Family`, `Ring`, `Source`, `Intensity`, `WordNode`, and `Spoke` are each defined once and imported everywhere else. `childrenOf`, `pathOf`, `getNode`, `searchWords`, `putEntry`, `allEntries`, `spokesForDay`, `renderDayGlyph`, `buildEntry`, and the five aggregation functions keep identical names and signatures across every task that references them.
+**Type consistency:** `Entry`, `Family`, `Ring`, `Source`, `Intensity`, `WordNode`, `Definition`, `Contrast`, and `Spoke` are each defined once and imported everywhere else. `childrenOf`, `pathOf`, `getNode`, `nearestNeighbours`, `searchWords`, `putEntry`, `deleteEntry`, `allEntries`, `wedgePath`, `spokesForDay`, `renderDayGlyph`, `buildEntry`, `monthGrid`, `timelinePage`, and the five aggregation functions keep identical names and signatures across every task that references them. Task 9 produces `wedgePath`; no task still refers to `arcPath`.

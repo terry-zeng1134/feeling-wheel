@@ -172,11 +172,12 @@
   }
   .wedge:hover { opacity: .82; }
   .wedge:focus-visible { outline: 2px solid var(--ink-1); outline-offset: 2px; }
+  /* No `fill` here — CSS beats the presentation attribute, and the ink is
+     computed per wedge from the fill's luminance. */
   .wedge-label {
     font-size: 10.5px; font-weight: 600; letter-spacing: .01em;
-    pointer-events: none; fill: #fff;
+    pointer-events: none;
   }
-  .wedge-label.dark-ink { fill: #16150f; }
   .ext-dot { pointer-events: none; }
 
   .hub-btn { cursor: pointer; }
@@ -227,6 +228,27 @@
     border: 1px dashed var(--line); border-radius: 5px;
     padding: 3px 6px; display: inline-block; width: fit-content;
   }
+  .defn { display: flex; flex-direction: column; gap: 7px; }
+  .gloss { margin: 0; font-size: 13px; color: var(--ink-2); line-height: 1.5; }
+  .defn details { border-top: 1px solid var(--line-soft); padding-top: 7px; }
+  .defn summary {
+    cursor: pointer; list-style: none; color: var(--ink-3);
+    font-family: var(--mono); font-size: 9.5px; letter-spacing: .12em;
+    text-transform: uppercase; display: flex; align-items: center; gap: 5px;
+  }
+  .defn summary::-webkit-details-marker { display: none; }
+  .defn summary::after { content: "+"; font-size: 12px; }
+  .defn details[open] summary::after { content: "–"; }
+  .defn summary:focus-visible { outline: 2px solid var(--ink-1); outline-offset: 2px; border-radius: 4px; }
+  .contrasts { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  .contrasts li { font-size: 12px; color: var(--ink-2); line-height: 1.45; }
+  .contrasts b { color: var(--ink-1); font-weight: 600; }
+  .contrasts .vs {
+    font-family: var(--mono); font-size: 9px; color: var(--ink-3);
+    letter-spacing: .1em; text-transform: uppercase; margin-right: 4px;
+  }
+  .defn .pending { font-size: 12px; color: var(--ink-3); font-style: italic; }
+
   .field { display: flex; flex-direction: column; gap: 6px; }
   .field > label {
     font-family: var(--mono); font-size: 10px; letter-spacing: .12em;
@@ -276,20 +298,48 @@
   .cell.out { opacity: .18; pointer-events: none; }
   .cell.today svg .guide { stroke-opacity: .5; }
 
-  .dayout {
-    border-top: 1px solid var(--line-soft); padding-top: 9px;
-    display: flex; flex-direction: column; gap: 6px; min-height: 116px;
+  /* Timeline: continues the same scroll as the grid — not a tab, not a modal. */
+  .monthscroll {
+    flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px;
+    scroll-behavior: smooth; margin: 0 -4px; padding: 0 4px;
   }
-  .dayout-date {
-    font-family: var(--mono); font-size: 10px; letter-spacing: .1em;
-    text-transform: uppercase; color: var(--ink-3);
+  @media (prefers-reduced-motion: reduce) { .monthscroll { scroll-behavior: auto; } }
+
+  .tl { display: flex; flex-direction: column; gap: 13px; padding-bottom: 6px; }
+  .tl-day { display: flex; flex-direction: column; gap: 7px; scroll-margin-top: 4px; }
+  .tl-head {
+    display: flex; align-items: center; gap: 8px;
+    border-top: 1px solid var(--line-soft); padding-top: 8px;
   }
-  .logrow { display: flex; align-items: center; gap: 7px; font-size: 12.5px; }
-  .logrow .bar { display: flex; gap: 2px; }
-  .logrow .pip { width: 4px; height: 11px; border-radius: 1px; background: var(--line); }
-  .logrow .name { flex: 1; }
-  .logrow .trig { color: var(--ink-3); font-size: 11px; }
-  .empty-day { color: var(--ink-3); font-size: 12px; }
+  .tl-head .lbl {
+    font-family: var(--mono); font-size: 10px; letter-spacing: .11em;
+    text-transform: uppercase; color: var(--ink-3); flex: 1;
+  }
+  .tl-day.is-target .tl-head .lbl { color: var(--ink-1); }
+  .tl-count {
+    font-family: var(--mono); font-size: 9.5px; color: var(--ink-3);
+    font-variant-numeric: tabular-nums;
+  }
+  .logrow {
+    display: grid; grid-template-columns: 34px 1fr auto; align-items: baseline;
+    gap: 8px; font-size: 12.5px;
+  }
+  .logrow .time {
+    font-family: var(--mono); font-size: 10px; color: var(--ink-3);
+    font-variant-numeric: tabular-nums;
+  }
+  .logrow .name { font-weight: 550; }
+  .logrow .bar { display: flex; gap: 2px; align-self: center; }
+  .logrow .pip { width: 3px; height: 10px; border-radius: 1px; background: var(--line); }
+  .logrow-sub {
+    grid-column: 2 / -1; color: var(--ink-3); font-size: 11px;
+    margin-top: -2px; display: flex; flex-direction: column; gap: 1px;
+  }
+  .logrow-sub .quote { color: var(--ink-2); font-style: italic; }
+  .tl-end {
+    font-family: var(--mono); font-size: 9.5px; color: var(--ink-3);
+    text-align: center; padding: 8px 0 2px; letter-spacing: .1em;
+  }
 
   /* ── palette table ────────────────────────────────────── */
   .scroller { overflow-x: auto; }
@@ -363,6 +413,7 @@
               <div class="picked-word" id="d-word">embarrassed</div>
               <div class="cite" id="d-cite">Willcox 1982 · ring 3</div>
             </div>
+            <div class="defn" id="d-defn"></div>
             <div class="field">
               <label id="lab-int">Intensity</label>
               <div class="steps" id="steps" role="group" aria-labelledby="lab-int"></div>
@@ -382,7 +433,7 @@
       </div>
 
       <div class="deck">
-        <div class="deck-label"><b>3 · Month</b> one glyph per day</div>
+        <div class="deck-label"><b>3 · Month + timeline</b> scroll down for detail</div>
         <div class="phone">
           <div class="statusbar"><span>9:41</span><span>82 entries</span></div>
           <div class="month-head">
@@ -393,8 +444,10 @@
             </div>
           </div>
           <div class="dow"><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span></div>
-          <div class="grid" id="grid"></div>
-          <div class="dayout" id="dayout"></div>
+          <div class="monthscroll" id="monthscroll">
+            <div class="grid" id="grid"></div>
+            <div class="tl" id="timeline"></div>
+          </div>
         </div>
       </div>
 
@@ -433,9 +486,6 @@
     mad:      ["#e34948", "#e66767"],
     powerful: ["#4a3aa7", "#9085e9"],
   };
-  // Light-mode hues needing dark ink on top for label contrast.
-  const DARK_INK = new Set(["joyful", "scared", "peaceful"]);
-
   // Illustrative tree — real one is transcribed in plan Task 2.
   const TREE = {
     mad: {
@@ -469,6 +519,52 @@
       trusting: ["serene", "unhurried"], nurturing: ["compassionate", "generous"],
     },
   };
+  /* Differential definitions (spec §3.4). AUTHORED — not from Willcox or Shaver.
+     The gloss says what the feeling is; each contrast says why it is not the
+     word beside it. A sample, to show the standard. */
+  const DEFS = {
+    embarrassed: ["Exposed in a small way, in front of people whose opinion you want. The stakes are social, not moral.", [
+      ["devastated", "Devastation is loss you have to rebuild from; embarrassment passes once attention moves on."],
+      ["mortified", "Mortification is exposure that feels unsurvivable, not merely awkward."],
+      ["humiliated", "Humiliation is something another person did to you on purpose."]]],
+    devastated: ["Something you were counting on is gone, and the shape of your life changed with it.", [
+      ["embarrassed", "Embarrassment is about being seen; devastation is about losing something."]]],
+    mortified: ["Exposure so total you want to stop existing for a moment. The reaction outruns the size of the audience.", [
+      ["embarrassed", "Embarrassment is survivable and social; mortification does not feel survivable."],
+      ["humiliated", "Humiliation needs someone to have done it to you; mortification can be entirely self-inflicted."]]],
+    humiliated: ["Brought low in front of others by someone who meant to do it. The injury is to standing, not just comfort.", [
+      ["embarrassed", "Embarrassment has no author; humiliation does."],
+      ["mortified", "Mortification is about your own exposure; humiliation is about someone else's power."]]],
+    overwhelmed: ["More is arriving than you can sort, so you have stopped sorting. The problem is volume, not danger.", [
+      ["worried", "Worry is aimed at one specific thing that hasn't happened; overwhelm has no single object."],
+      ["dread", "Dread is certain something bad is coming; overwhelm is only certain there is too much."]]],
+    worried: ["Circling one particular bad outcome that hasn't happened yet, rehearsing it.", [
+      ["overwhelmed", "Overwhelm is too much at once; worry is one thing, too often."]]],
+    irritated: ["Something small keeps catching, and your tolerance was already spent.", [
+      ["frustrated", "Frustration has a goal being blocked; irritation just wants the thing to stop."]]],
+    frustrated: ["You know what you want and something keeps standing between you and it.", [
+      ["irritated", "Irritation is about the friction itself; frustration is about the goal behind it."]]],
+    inadequate: ["Measured against what this moment asks, you come up short. The comparison is to a standard.", [
+      ["small", "Smallness is about status next to a person; inadequacy is about capability next to a task."]]],
+    small: ["Diminished next to someone else, taking up less room than you did an hour ago.", [
+      ["inadequate", "Inadequacy is about not being able; smallness is about not counting."]]],
+    isolated: ["Cut off by circumstance. The distance is structural, and nobody chose it.", [
+      ["abandoned", "Abandonment means someone left; isolation can happen with no one at fault."],
+      ["forsaken", "Forsaken adds that the leaving was a betrayal of something owed."]]],
+    abandoned: ["Someone who should have stayed didn't. The absence has an author.", [
+      ["isolated", "Isolation is a condition; abandonment is an act."]]],
+    accomplished: ["You finished something that took what you had, and the result holds up.", [
+      ["worthwhile", "Worth is about mattering regardless of output; accomplishment needs a finished thing."],
+      ["triumphant", "Triumph needs something overcome — a rival, a long odds. Accomplishment only needs the work done."]]],
+    worthwhile: ["You are worth the room you take up, independent of what you produced today.", [
+      ["accomplished", "Accomplishment is earned by doing; worth isn't earned at all."]]],
+    satisfied: ["What you wanted, you got, and the wanting has stopped for now.", [
+      ["at ease", "Ease doesn't require anything to have been achieved; satisfaction is the settling afterwards."]]],
+    "at ease": ["Nothing is asking anything of you, and you are not braced for it to start.", [
+      ["satisfied", "Satisfaction follows getting something; ease doesn't require anything to have happened."],
+      ["serene", "Serenity holds even when something *is* being asked of you."]]],
+  };
+
   // Ring 4 — cited extension, partial by design.
   const EXT = {
     embarrassed: [["mortified", "Shaver 1987"], ["humiliated", "Shaver 1987"]],
@@ -496,13 +592,34 @@
     const rad = ((deg - 90) * Math.PI) / 180;
     return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
   };
-  const arcPath = (cx, cy, ri, ro, a0, a1) => {
-    const lg = Math.abs(a1 - a0) > 180 ? 1 : 0;
-    const o0 = polar(cx, cy, ro, a0), o1 = polar(cx, cy, ro, a1);
-    const i1 = polar(cx, cy, ri, a1), i0 = polar(cx, cy, ri, a0);
+  /**
+   * A wedge with a gap of CONSTANT PIXEL WIDTH on each side.
+   * Padding by a fixed angle would give a V-shaped gap — narrow at the hub,
+   * flaring at the rim. Arc length is r·θ, so the angular pad has to shrink as
+   * the radius grows: padDeg(r) = (gap/2)/r · 180/π. Inner and outer edges then
+   * start at different angles and the gap reads parallel-sided.
+   */
+  const wedgePath = (cx, cy, ri, ro, centre, span, gap) => {
+    const pad = (r) => ((gap / 2) / r) * (180 / Math.PI);
+    const pi = pad(ri), po = pad(ro);
+    const a0i = centre - span / 2 + pi, a1i = centre + span / 2 - pi;
+    const a0o = centre - span / 2 + po, a1o = centre + span / 2 - po;
+    const lg = span > 180 ? 1 : 0;
+    const o0 = polar(cx, cy, ro, a0o), o1 = polar(cx, cy, ro, a1o);
+    const i1 = polar(cx, cy, ri, a1i), i0 = polar(cx, cy, ri, a0i);
     return `M ${o0.x} ${o0.y} A ${ro} ${ro} 0 ${lg} 1 ${o1.x} ${o1.y}`
          + ` L ${i1.x} ${i1.y} A ${ri} ${ri} 0 ${lg} 0 ${i0.x} ${i0.y} Z`;
   };
+
+  // Label ink picked from the fill's luminance, so it works in both themes.
+  const relLum = (hex) => {
+    const c = [1, 3, 5].map((i) => {
+      const v = parseInt(hex.slice(i, i + 2), 16) / 255;
+      return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+  };
+  const inkOn = (hex) => (relLum(hex) > 0.3 ? "#16150f" : "#ffffff");
   const fanAngles = (c, span, n) => {
     if (n <= 1) return [c];
     const usable = span * 0.8, step = usable / (n - 1);
@@ -532,7 +649,7 @@
 
   function drawWheel() {
     wheelEl.replaceChildren();
-    const C = 131, ri = 46, ro = 126;
+    const C = 131, rHub = 46, ri = 56, ro = 127, GAP = 3;
     const kids = childrenOf(path);
     const fam = path.length ? famOf(path) : null;
 
@@ -541,18 +658,17 @@
       const span = 360 / n;
       // At the root, each family sits at its fixed angle. Deeper, children fill the ring.
       const centre = path.length === 0 ? ANGLE[kid] : i * span;
-      const a0 = centre - span / 2, a1 = centre + span / 2;
       const thisFam = fam ?? kid;
+      const fill = col(thisFam);
       const g = mk("g", { class: "wedge", role: "button", tabindex: "0",
                           "aria-label": `${pretty(kid)}, ${childrenOf([...path, kid]).length ? "open" : "log"}` });
       g.appendChild(mk("path", {
-        d: arcPath(C, C, ri, ro, a0 + 0.9, a1 - 0.9),
-        fill: col(thisFam), stroke: "var(--surface-1)", "stroke-width": "2",
+        d: wedgePath(C, C, ri, ro, centre, span, GAP), fill,
       }));
       const lp = polar(C, C, (ri + ro) / 2, centre);
       const t = mk("text", {
-        x: lp.x, y: lp.y + 3.5, class: "wedge-label" + (DARK_INK.has(thisFam) && !isDark() ? " dark-ink" : ""),
-        "text-anchor": "middle",
+        x: lp.x, y: lp.y + 3.5, class: "wedge-label",
+        fill: inkOn(fill), "text-anchor": "middle",
       });
       t.textContent = pretty(kid);
       g.appendChild(t);
@@ -579,7 +695,7 @@
           "aria-label": `Log ${pretty(path.at(-1))}` }
       : { class: "hub-static" });
     hub.appendChild(mk("circle", {
-      cx: C, cy: C, r: ri - 4, fill: "var(--hub)",
+      cx: C, cy: C, r: rHub, fill: "var(--hub)",
       stroke: live ? col(famOf(path)) : "var(--line)", "stroke-width": live ? "2" : "1",
     }));
     const w = mk("text", { x: C, y: live ? C - 1 : C + 4, class: "hub-word" });
@@ -623,6 +739,50 @@
 
   function commit(p) { picked = p; drawDetail(); }
 
+  function drawDefinition(word, ring) {
+    const host = document.getElementById("d-defn");
+    host.replaceChildren();
+    if (ring < 3) {
+      const p = document.createElement("p");
+      p.className = "pending";
+      p.textContent = "Rings 1 and 2 carry no definition — nobody needs “mad” explained.";
+      host.appendChild(p);
+      return;
+    }
+    const def = DEFS[word];
+    if (!def) {
+      const p = document.createElement("p");
+      p.className = "pending";
+      p.textContent = "Definition authored in Task 5. This sample covers a subset.";
+      host.appendChild(p);
+      return;
+    }
+    const [gloss, contrasts] = def;
+    const g = document.createElement("p");
+    g.className = "gloss";
+    g.textContent = gloss;
+    host.appendChild(g);
+
+    const d = document.createElement("details");
+    const s = document.createElement("summary");
+    s.textContent = `how this differs · ${contrasts.length}`;
+    d.appendChild(s);
+    const ul = document.createElement("ul");
+    ul.className = "contrasts";
+    for (const [vs, note] of contrasts) {
+      const li = document.createElement("li");
+      const tag = document.createElement("span");
+      tag.className = "vs";
+      tag.textContent = "vs";
+      const b = document.createElement("b");
+      b.textContent = vs;
+      li.append(tag, b, document.createTextNode(" — " + note));
+      ul.appendChild(li);
+    }
+    d.appendChild(ul);
+    host.appendChild(d);
+  }
+
   function drawDetail() {
     const fam = famOf(picked);
     document.getElementById("d-path").textContent =
@@ -631,6 +791,8 @@
     document.getElementById("d-word").style.color = col(fam);
     document.getElementById("d-cite").textContent = citeOf(picked);
     document.getElementById("d-ring").textContent = `Ring ${picked.length}`;
+
+    drawDefinition(picked.at(-1), picked.length);
 
     const steps = document.getElementById("steps");
     steps.replaceChildren();
@@ -749,7 +911,6 @@
   }
 
   const gridEl = document.getElementById("grid");
-  const dayoutEl = document.getElementById("dayout");
   const TODAY = 2;
 
   function drawMonth() {
@@ -792,39 +953,91 @@
     }
   }
 
-  function showDay(d) {
-    dayoutEl.replaceChildren();
-    const h = document.createElement("div");
-    h.className = "dayout-date";
-    h.textContent = `${d} August · ${DAYS[d].length} ${DAYS[d].length === 1 ? "entry" : "entries"}`;
-    dayoutEl.appendChild(h);
-    if (!DAYS[d].length) {
-      const e = document.createElement("div");
-      e.className = "empty-day";
-      e.textContent = "Nothing logged.";
-      dayoutEl.appendChild(e);
-      return;
-    }
-    for (const e of DAYS[d].slice(0, 5)) {
-      const row = document.createElement("div");
-      row.className = "logrow";
-      const bar = document.createElement("div");
-      bar.className = "bar";
-      for (let i = 1; i <= 5; i++) {
-        const p = document.createElement("span");
-        p.className = "pip";
-        if (i <= e.i) p.style.background = col(e.fam);
-        bar.appendChild(p);
+  const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+  /** Newest day first, empty days omitted, entries newest first within a day. */
+  function timelineDays() {
+    return Object.keys(DAYS)
+      .map(Number)
+      .filter((d) => DAYS[d].length > 0)
+      .sort((a, b) => b - a)
+      .map((d) => ({ d, entries: [...DAYS[d]].sort((a, b) => b.hh.localeCompare(a.hh)) }));
+  }
+
+  function drawTimeline() {
+    const host = document.getElementById("timeline");
+    host.replaceChildren();
+    for (const { d, entries } of timelineDays()) {
+      const day = document.createElement("section");
+      day.className = "tl-day";
+      day.id = `tl-${d}`;
+
+      const head = document.createElement("div");
+      head.className = "tl-head";
+      head.appendChild(glyph(entries, 20, { guide: 0.22 }));
+      const lbl = document.createElement("span");
+      lbl.className = "lbl";
+      lbl.textContent = d === TODAY
+        ? `Today · ${d} Aug`
+        : `${DOW[new Date(2026, 7, d).getDay()]} ${d} Aug`;
+      const cnt = document.createElement("span");
+      cnt.className = "tl-count";
+      cnt.textContent = entries.length;
+      head.append(lbl, cnt);
+      day.appendChild(head);
+
+      for (const e of entries) {
+        const row = document.createElement("div");
+        row.className = "logrow";
+
+        const time = document.createElement("span");
+        time.className = "time";
+        time.textContent = `${e.hh}:${String((e.i * 7 + d) % 60).padStart(2, "0")}`;
+
+        const name = document.createElement("span");
+        name.className = "name";
+        name.textContent = e.label;
+        name.style.color = col(e.fam);
+
+        const bar = document.createElement("span");
+        bar.className = "bar";
+        for (let i = 1; i <= 5; i++) {
+          const p = document.createElement("span");
+          p.className = "pip";
+          if (i <= e.i) p.style.background = col(e.fam);
+          bar.appendChild(p);
+        }
+        row.append(time, name, bar);
+
+        const sub = document.createElement("span");
+        sub.className = "logrow-sub";
+        const t = document.createElement("span");
+        t.textContent = e.trig;
+        sub.appendChild(t);
+        if (e.i >= 4) {
+          const q = document.createElement("span");
+          q.className = "quote";
+          q.textContent = "“the relief came first, which is the part that bothers me”";
+          sub.appendChild(q);
+        }
+        row.appendChild(sub);
+        day.appendChild(row);
       }
-      const name = document.createElement("span");
-      name.className = "name";
-      name.textContent = e.label;
-      const trig = document.createElement("span");
-      trig.className = "trig";
-      trig.textContent = e.trig;
-      row.append(bar, name, trig);
-      dayoutEl.appendChild(row);
+      host.appendChild(day);
     }
+    const end = document.createElement("div");
+    end.className = "tl-end";
+    end.textContent = "— loads 14 more on scroll —";
+    host.appendChild(end);
+  }
+
+  /** Tapping a day in the grid scrolls the feed to it. One mechanism, not two. */
+  function showDay(d) {
+    const target = document.getElementById(`tl-${d}`);
+    document.querySelectorAll(".tl-day.is-target").forEach((n) => n.classList.remove("is-target"));
+    if (!target) return;
+    target.classList.add("is-target");
+    target.scrollIntoView({ block: "start" });
   }
 
   /* ── palette table ─────────────────────────────────────── */
@@ -840,7 +1053,7 @@
   }
 
   /* ── boot + theme reactivity ───────────────────────────── */
-  function drawAll() { drawWheel(); drawDetail(); drawMonth(); showDay(TODAY); }
+  function drawAll() { drawWheel(); drawDetail(); drawMonth(); drawTimeline(); }
   drawAll();
   matchMedia("(prefers-color-scheme: dark)").addEventListener("change", drawAll);
   new MutationObserver(drawAll).observe(document.documentElement, {

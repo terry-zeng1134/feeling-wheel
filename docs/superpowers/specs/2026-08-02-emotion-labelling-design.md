@@ -102,6 +102,46 @@ closer to appraisals than emotions and most researchers would not call them
 basic — but for journaling they are among the most useful branches, because
 "I feel capable today" needs somewhere to go and Shaver has no equivalent.
 
+### 3.4 Definitions
+
+Every ring-3 and ring-4 word carries a **differential definition**: a short gloss
+plus explicit contrasts against the words it is most confusable with. Rings 1–2
+carry none — nobody needs "Mad" defined.
+
+```ts
+interface Definition {
+  gloss: string;                              // 1–2 sentences
+  contrasts: { vs: string; note: string }[];  // vs = another word's id
+  source: "authored";
+}
+```
+
+**Why differential rather than standalone.** A dictionary gloss tells you what a
+word means; it does not tell you which of two adjacent words is the true one.
+The moment of choosing is the moment the app exists for, and choosing is a
+comparison. "Mortified: overwhelming shame" is useless sitting next to
+"humiliated: painful loss of dignity" — what a person needs is that humiliation
+is something another person did to you on purpose, while mortification is
+exposure that feels unsurvivable. Differential definitions also serve §6.5
+directly: precision is learnable, and this is the surface that teaches it.
+
+**Contrast set.** For a word `w`, contrasts are drawn from the words nearest it
+in the tree:
+
+- its **siblings** (same parent), and
+- its **parent**, when `w` is ring 4 — a ring-4 word is a refinement of its
+  ring-3 parent, so that is the comparison a user is actually making.
+
+Two to three contrasts per word. More becomes a wall of text at exactly the
+moment someone wants to stop reading and log.
+
+**Provenance.** Emotion words do not have published definitions the way theorised
+constructs do — Shaver gives cluster membership, not glosses. These definitions
+are therefore **authored**, and `Definition.source` is a field separate from the
+word's own `source`. The UI must never present a definition as though Willcox or
+Shaver wrote it. Where a definition draws a distinction that a cited source makes
+explicitly, the contrast note may name that source inline.
+
 ---
 
 ## 4. Data model
@@ -185,6 +225,24 @@ The wheel is for when the word isn't known yet. When it is:
 - **Search** — type "resent", land on it directly.
 - **Recent** — last six words as chips. Most logging is repeat logging.
 
+### 5.5 Where definitions appear
+
+Definitions (§3.4) must be reachable at the moment of choosing without becoming
+an obstacle to logging. Three surfaces, in increasing detail:
+
+1. **On the wheel** — long-press (or focus + `?`) a ring-3 or ring-4 wedge to
+   show its gloss and contrasts in a sheet. Dismissing returns you to the wheel
+   with nothing selected. A plain tap still descends or commits; reading is
+   always opt-in.
+2. **On the detail screen** — the gloss appears under the committed word, with
+   contrasts collapsed behind a "how this differs" toggle. If the definition
+   changes your mind, the word itself is tappable to go back to the wheel at
+   that position.
+3. **In list mode** — gloss inline, contrasts expandable. The screen-reader path
+   gets the full text, not a truncated one.
+
+Definitions are never shown as a blocking step and never gate a save.
+
 ---
 
 ## 6. Review
@@ -200,6 +258,25 @@ entries it needs rather than rendering noise as insight.
 ### 6.1 Month view — the day glyph
 
 Each day is a miniature of the wheel itself. Full spec in §7.
+
+### 6.1a Timeline
+
+Directly below the month grid, on the same scroll: a continuous
+reverse-chronological feed. Each day gets a header (date plus its glyph at small
+size), then that day's entries — time, word in its family colour, intensity,
+trigger, note.
+
+- **The grid and the feed are one scroll, not two tabs.** The grid is the map and
+  the feed is the territory; scrolling from one into the other is the natural
+  motion, and it means the shape of the month and the substance of it are never
+  more than a flick apart.
+- **Tapping a day in the grid scrolls the feed to that day.** One mechanism, not
+  a modal bolted beside a feed.
+- **Days with nothing logged are omitted.** Scrolling through empty space to
+  reach content is a cost with no benefit; the grid already shows the gaps.
+- **Loads 14 days per page** as you scroll back.
+- **Entries are edited and deleted here.** This is the only surface where an
+  entry can be changed — capture writes, the feed corrects.
 
 ### 6.2 Family rollup
 
@@ -288,7 +365,7 @@ the month from three feet away.
 - **Today.** Emphasized ring.
 - **Dense days.** Beyond 8 entries, stroke thins to 1.5px. Beyond 12, the glyph
   caps and shows a count.
-- **Tap.** Opens the day's entries with exact values.
+- **Tap.** Scrolls the timeline (§6.1a) to that day, where exact values live.
 
 Intensity reads as approximate at 40px. That is the honest cost of this form,
 and the reason tap-for-detail exists: the glyph is a scanning instrument, the
@@ -355,6 +432,7 @@ Each unit stands alone and is testable without the others:
 | Item | Resolution path |
 |---|---|
 | Ring-4 vocabulary is a construction, not a published source | Built as a separate reviewable artifact with per-word citations before implementation. §3.2 rules govern. |
+| ~112 differential definitions are authored, and a wrong one actively misleads | Same treatment as the vocabulary: a standalone reviewable artifact, read in full before it ships. Contrasts are symmetric by test — if `mortified` contrasts against `embarrassed`, the reverse must exist and must not contradict it. |
 | Day glyph legibility at 40px is unproven | Prototype the glyph at true size with realistic data before building the month view around it. |
 | Six-hue palette may fail CVD validation | Run the validator early; snap to passing steps. Fixed angles mean the glyph survives even if hue separation is imperfect. |
 | Storage eviction on iOS | One-tap export; consider an export nudge after N entries without one. |
@@ -375,3 +453,6 @@ Settled during design, recorded so they aren't relitigated:
 5. Rotation encodes valence rather than inheriting the published arrangement.
 6. Hub commits, wedges descend — makes "stop at any layer" a first-class action
    rather than an escape hatch.
+7. Definitions are differential, not standalone — the app's job is helping you
+   choose between adjacent words, and choosing is a comparison. They are authored
+   and labelled as such, never attributed to the cited sources.
