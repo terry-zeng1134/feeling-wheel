@@ -24,7 +24,7 @@ longer-lived storage bucket.
 | **Log** | The wheel, plus search and recent-word shortcuts. Stop at any ring — two taps for "I just feel bad", five for something exact. |
 | **Month** | One radial glyph per day. Angle is the feeling family, length is intensity, count is how many times you logged. Scroll down into a full timeline of entries. |
 | **Patterns** | Where entries sat, granularity over time, time-of-day histogram, and what you felt after recurring triggers. |
-| **Data** | Export JSON or CSV, import a backup, delete everything. |
+| **Data** | Export JSON or CSV, import a backup, optional encrypted sync, delete everything. |
 
 ### The day glyph
 
@@ -36,6 +36,46 @@ Colours were chosen by exhaustive search rather than by eye, gated on OKLab
 separation for the six cyclically-adjacent pairs — the only pairs that ever
 touch, because the angles are fixed. Worst adjacent pair: CVD ΔE 8.4 against a
 target of 8.0, normal-vision ΔE 19.3 against a floor of 15.0, in both themes.
+
+## Optional: encrypted sync
+
+Off by default. Turn it on if you want your entries on more than one device, or
+a backup that survives a cleared browser.
+
+The server stores `{ id, user_id, updated_at, deleted, iv, ct }` — a timestamp
+and a blob. The entry itself is AES-GCM encrypted in your browser under a key
+derived (PBKDF2-SHA256, 250k iterations) from a passphrase **that is never
+transmitted**. Every bit of analysis in this app is client-side, so making the
+data opaque to the server costs nothing.
+
+Two separate secrets, on purpose:
+
+| | Seen by the server | Recoverable |
+|---|---|---|
+| Account password | yes, for auth | yes, password reset |
+| Encryption passphrase | **never** | **no** |
+
+**Lose the passphrase and the synced rows are unreadable — by anyone, including
+you.** Your local entries and any export stay readable, so it isn't fatal, but
+write it down.
+
+### Setting it up
+
+1. Create a free project at [supabase.com](https://supabase.com).
+2. SQL Editor → New query → paste all of [`supabase-schema.sql`](supabase-schema.sql) → Run.
+3. In the app: **Data → Set up sync**. Paste the project URL and anon key from
+   Settings → API, pick an account email/password, and choose a passphrase.
+
+The anon key is *designed* to be public — it identifies the project, your JWT
+identifies you, and the row-level security policies in the schema restrict every
+query to your own rows. That auth model is why this uses Supabase rather than a
+plain database: a client-only app with no backend cannot hold a real secret.
+
+Nothing sync-related is stored in this repo. Your URL, key, and session live in
+your browser's `localStorage`; the passphrase lives only in memory.
+
+Sync is last-write-wins per entry on `updatedAt`, and deletes are tombstones so
+they propagate rather than resurrecting from the other device.
 
 ## Sources, and what is and isn't cited
 
@@ -64,6 +104,7 @@ index.html              built, hosted page — do not edit directly
 app/index.html          the app itself; edit this
 manifest.webmanifest    PWA manifest
 sw.js                   offline cache
+supabase-schema.sql     paste into Supabase to enable sync
 tools/build.mjs         app/index.html + document shell → index.html
 tools/make-icons.mjs    generates the icons, no image dependencies
 mockup/index.html       earlier design mockup
