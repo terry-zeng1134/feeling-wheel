@@ -7,9 +7,13 @@ a radial wheel from vague to specific — *mad → hurt → embarrassed → mort
 log it with an intensity and a trigger, and the month view shows you the shape of
 it afterwards.
 
-**Everything stays on your device.** There is no account, no server, and no
+**Everything stays on your device by default.** No account, no server, no
 network request of any kind. Entries live in your browser's local storage, and
 the only way data leaves is if you export it yourself.
+
+Sync is available and off unless you turn it on — and when you do, entries are
+encrypted here before they're sent, so the server holds a blob it cannot read.
+See [encrypted sync](#optional-encrypted-sync).
 
 ## Install on iPhone
 
