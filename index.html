@@ -330,11 +330,11 @@
     <div class="card">
       <h2>On this device only</h2>
       <p class="note-s" style="margin:0">
-        Entries live in this browser's storage. Nothing is sent anywhere — there is no
-        server and no account. iOS can clear this if the app goes unused for a long
-        stretch, so export now and then.
+        Entries are stored on this device and nowhere else. No server, no account,
+        no request that carries your data anywhere.
       </p>
       <div class="stat"><span class="v" id="d-count">0</span><span class="k">entries stored</span></div>
+      <div id="storage-state" style="display:flex;flex-direction:column;gap:8px"></div>
       <div class="row2">
         <button class="btn ghost" id="ex-json">Export JSON</button>
         <button class="btn ghost" id="ex-csv">Export CSV</button>
@@ -1119,13 +1119,15 @@ function dl(name, text, type) {
 const stamp = () => dstr(new Date().toISOString());
 document.getElementById("ex-json").addEventListener("click", () => {
   dl(`feeling-wheel-${stamp()}.json`, JSON.stringify({ version: 1, exported: new Date().toISOString(), entries: ENTRIES }, null, 2), "application/json");
-  toast("Exported");
+  localStorage.setItem("fw.lastExport", String(Date.now()));
+  drawStorage(); toast("Exported");
 });
 document.getElementById("ex-csv").addEventListener("click", () => {
   const q = (v) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
   const rows = ENTRIES.map((e) => [e.id, e.ts, e.wordId, e.path.join(" > "), e.ring, e.intensity, e.trigger, e.note].map((x) => q(String(x))).join(","));
   dl(`feeling-wheel-${stamp()}.csv`, ["id,ts,wordId,path,ring,intensity,trigger,note", ...rows].join("\n"), "text/csv");
-  toast("Exported");
+  localStorage.setItem("fw.lastExport", String(Date.now()));
+  drawStorage(); toast("Exported");
 });
 document.getElementById("im-btn").addEventListener("click", () => document.getElementById("im-file").click());
 document.getElementById("im-file").addEventListener("change", async (e) => {
@@ -1406,6 +1408,73 @@ function openSyncSetup(step = 1) {
   document.getElementById("sheet").classList.add("on");
 }
 
+/* ══ storage durability ════════════════════════════════════════════
+   Browser storage is evictable by default — the OS may reclaim it under disk
+   pressure. navigator.storage.persist() asks for an exemption. Safari grants
+   it based on engagement signals, of which "installed to the home screen" is
+   the strongest, so we ask on load and again on an explicit tap.
+   ═══════════════════════════════════════════════════════════════════ */
+async function storageState() {
+  const out = { supported: false, persisted: false, usage: null, quota: null };
+  if (!navigator.storage) return out;
+  out.supported = true;
+  try { out.persisted = await navigator.storage.persisted(); } catch {}
+  try {
+    const est = await navigator.storage.estimate();
+    out.usage = est.usage; out.quota = est.quota;
+  } catch {}
+  return out;
+}
+
+const kb = (n) => (n == null ? "—" : n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} kB` : `${(n / 1048576).toFixed(1)} MB`);
+
+async function drawStorage() {
+  const host = document.getElementById("storage-state");
+  if (!host) return;
+  host.replaceChildren();
+  const s = await storageState();
+
+  if (!s.supported) {
+    host.appendChild(el("p", "note-s", "This browser doesn't report storage status. Export regularly."));
+    return;
+  }
+
+  const line = el("p", "note-s");
+  if (s.persisted) {
+    line.textContent = `Storage is marked persistent — iOS won't reclaim it to free space. Using ${kb(s.usage)}${s.quota ? ` of about ${kb(s.quota)} available` : ""}.`;
+  } else {
+    line.textContent = `Storage is best-effort: iOS could reclaim it under disk pressure. Using ${kb(s.usage)}. Adding the app to your Home Screen and tapping below usually earns a permanent exemption.`;
+  }
+  host.appendChild(line);
+
+  if (!s.persisted) {
+    const b = el("button", "btn ghost", "Make storage permanent");
+    b.addEventListener("click", async () => {
+      b.disabled = true; b.textContent = "Asking…";
+      let ok = false;
+      try { ok = await navigator.storage.persist(); } catch {}
+      b.disabled = false;
+      toast(ok ? "Storage is now permanent" : "Not granted yet — add to Home Screen, use the app a few times, then try again");
+      drawStorage();
+    });
+    host.appendChild(b);
+  }
+
+  // Nudge toward a backup once there's enough logged to hurt losing.
+  const lastEx = Number(localStorage.getItem("fw.lastExport") ?? 0);
+  const stale = Date.now() - lastEx > 14 * 864e5;
+  if (ENTRIES.length >= 25 && stale) {
+    const w = el("p", "note-s");
+    w.style.color = "var(--joyful)";
+    w.textContent = lastEx
+      ? `${ENTRIES.length} entries and no backup in two weeks. Export below.`
+      : `${ENTRIES.length} entries and no backup yet. Export below.`;
+    host.appendChild(w);
+  }
+}
+// Ask once on load; harmless if already granted or refused.
+if (navigator.storage?.persist) navigator.storage.persist().catch(() => {});
+
 /* ══ nav ═══════════════════════════════════════════════════════════ */
 document.querySelector(".tabs").addEventListener("click", (e) => {
   const b = e.target.closest("button[data-go]"); if (!b) return;
@@ -1426,6 +1495,7 @@ function refresh() {
 }
 refresh();
 drawSync();
+drawStorage();
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", refresh);
 new MutationObserver(refresh).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
 </script>

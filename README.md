@@ -21,6 +21,19 @@ Open the site in Safari → **Share** → **Add to Home Screen**. It launches
 fullscreen with no browser chrome, works with no connection, and gets its own
 longer-lived storage bucket.
 
+No Apple account, no Xcode, no developer fee, and nothing that expires.
+
+### Making local storage permanent
+
+Browser storage is *evictable* by default — the OS may reclaim it under disk
+pressure. The app calls `navigator.storage.persist()` to ask for an exemption,
+and **Data → Make storage permanent** asks again explicitly. Safari grants it on
+engagement signals, and being installed to the Home Screen is the strongest one,
+so install first and then tap it.
+
+The Data screen states plainly which mode you're in rather than assuming, and
+nudges you to export if you have 25+ entries and no backup in two weeks.
+
 ## What's in it
 
 | | |
