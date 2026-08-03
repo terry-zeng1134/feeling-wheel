@@ -96,8 +96,48 @@
   /* ── wheel ───────────────────────────────────── */
   .wheelwrap { display: grid; place-items: center; padding: 2px 0; }
   svg.wheel { width: min(88vw, 330px); height: min(88vw, 330px); display: block; }
-  .wedge { cursor: pointer; }
+
+  /* The wheel's one real animation: children unfold from the wedge you tapped,
+     so the hierarchy is legible rather than a cut. transform-origin is the
+     wheel's centre in user units (viewBox is 0 0 330 330). */
+  .wedge {
+    cursor: pointer;
+    transform-origin: 165px 165px;
+  }
   .wedge:active path { opacity: .74; }
+  .wheel.anim .wedge {
+    transition: transform .34s cubic-bezier(.22, 1, .36, 1), opacity .26s ease-out;
+  }
+  .wedge.enter { opacity: 0; }
+  .hub-pop { animation: hubpop .38s cubic-bezier(.22, 1, .36, 1); }
+  @keyframes hubpop {
+    0%   { transform: scale(1); }
+    38%  { transform: scale(1.11); }
+    100% { transform: scale(1); }
+  }
+  .hub-g { transform-origin: 165px 165px; }
+
+  /* Day-glyph spokes draw outward when the month appears. */
+  .glyph-draw line {
+    animation: spoke .5s cubic-bezier(.22, 1, .36, 1) backwards;
+  }
+  @keyframes spoke {
+    from { stroke-dashoffset: var(--len); }
+    to   { stroke-dashoffset: 0; }
+  }
+
+  .screen.on { animation: screenin .22s ease-out; }
+  @keyframes screenin {
+    from { opacity: 0; transform: translateY(5px); }
+    to   { opacity: 1; transform: none; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .wheel.anim .wedge { transition: none; }
+    .wedge.enter { opacity: 1; }
+    .hub-pop, .glyph-draw line, .screen.on { animation: none; }
+    .glyph-draw line { stroke-dashoffset: 0 !important; }
+  }
   .wlabel { font-size: 11px; font-weight: 600; pointer-events: none; }
   .wlabel.sm { font-size: 9.5px; }
   .hubw { font-size: 14px; font-weight: 650; fill: var(--ink-1); text-anchor: middle; pointer-events: none; }
@@ -148,13 +188,19 @@
     backdrop-filter: blur(6px);
     align-items: flex-end; justify-content: center;
   }
-  .sheet.on { display: flex; }
+  .sheet.on { display: flex; animation: fadein .2s ease-out; }
+  @keyframes fadein { from { opacity: 0; } to { opacity: 1; } }
   .sheet-in {
     background: var(--card); border: 1px solid var(--line);
     border-radius: 20px 20px 0 0; width: 100%; max-width: 460px;
     max-height: 92dvh; overflow-y: auto;
     padding: 16px 16px calc(18px + env(safe-area-inset-bottom));
     display: flex; flex-direction: column; gap: 14px;
+  }
+  .sheet.on .sheet-in { animation: sheetup .3s cubic-bezier(.22, 1, .36, 1); }
+  @keyframes sheetup { from { transform: translateY(14%); } to { transform: none; } }
+  @media (prefers-reduced-motion: reduce) {
+    .sheet.on, .sheet.on .sheet-in { animation: none; }
   }
   .grab { width: 34px; height: 4px; border-radius: 2px; background: var(--line); margin: 0 auto; }
   .picked-w { font-size: 29px; font-weight: 600; letter-spacing: -.02em; line-height: 1.08; }
@@ -635,7 +681,7 @@ function toast(msg) {
 }
 
 /* ══ glyph ═════════════════════════════════════════════════════════ */
-function glyph(entries, size, guide = 0.16) {
+function glyph(entries, size, guide = 0.16, draw = false) {
   const svg = mk("svg", { viewBox: `0 0 ${size} ${size}`, width: size, height: size, role: "img",
     "aria-label": entries.length ? `${entries.length} ${entries.length === 1 ? "entry" : "entries"}` : "nothing logged" });
   const c = size / 2, rh = size * 0.09, rm = size * 0.44;
@@ -648,10 +694,19 @@ function glyph(entries, size, guide = 0.16) {
     mine.forEach((e, i) => sp.push({ f, a: as[i], frac: 0.35 + (e.intensity / 5) * 0.65 }));
   }
   const w = sp.length > 8 ? 1.4 : 2;
-  for (const s of sp) {
+  if (draw && sp.length && !reduceMotion()) svg.classList.add("glyph-draw");
+  sp.forEach((s, i) => {
     const a = polar(c, c, rh, s.a), b = polar(c, c, rh + (rm - rh) * s.frac, s.a);
-    svg.appendChild(mk("line", { x1: a.x, y1: a.y, x2: b.x, y2: b.y, stroke: col(s.f), "stroke-width": w, "stroke-linecap": "round" }));
-  }
+    const line = mk("line", { x1: a.x, y1: a.y, x2: b.x, y2: b.y, stroke: col(s.f), "stroke-width": w, "stroke-linecap": "round" });
+    if (draw && !reduceMotion()) {
+      // Draw each spoke outward from the hub via its own dash length.
+      const len = Math.hypot(b.x - a.x, b.y - a.y);
+      line.style.setProperty("--len", len);
+      line.setAttribute("stroke-dasharray", len);
+      line.style.animationDelay = `${i * 22}ms`;
+    }
+    svg.appendChild(line);
+  });
   return svg;
 }
 
@@ -660,11 +715,19 @@ let path = [];
 const wheelEl = document.getElementById("wheel");
 const crumbEl = document.getElementById("crumbs");
 
+/* Where the next render should appear to come from:
+   { angle, dir } — dir 1 descending (unfold outward), -1 ascending (fold back). */
+let originHint = null;
+const reduceMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+
 function drawWheel() {
+  const hint = originHint; originHint = null;
   wheelEl.replaceChildren();
   const C = 165, RH = 58, RI = 70, RO = 160, GAP = 3.5;
   const kids = kidsOf(path.length ? path[path.length - 1] : null);
   const fam = path.length ? N.get(path[0]).family : null;
+  const animate = hint && !reduceMotion();
+  const pending = [];
 
   kids.forEach((k, i) => {
     const span = 360 / kids.length;
@@ -672,6 +735,19 @@ function drawWheel() {
     const f = fam ?? k.id, fill = col(f);
     const g = mk("g", { class: "wedge", role: "button", tabindex: "0",
       "aria-label": `${k.label}${k.kids.length ? ", open" : ", log"}` });
+
+    if (animate) {
+      // Descending: start compressed onto the tapped wedge's angle, then fan out.
+      // Ascending: no rotation, just settle inward — reads as pulling back out.
+      // Wrap to [-180, 180] so each wedge takes the short way round; the raw
+      // difference sends some of them two-thirds of the way around the circle.
+      const raw = hint.dir === 1 ? hint.angle - centre : 0;
+      const delta = ((raw % 360) + 540) % 360 - 180;
+      const scale = hint.dir === 1 ? 0.52 : 1.42;
+      g.classList.add("enter");
+      g.style.transform = `rotate(${delta}deg) scale(${scale})`;
+      pending.push({ g, i });
+    }
     g.appendChild(mk("path", { d: wedgePath(C, C, RI, RO, centre, span, GAP), fill }));
     const lp = polar(C, C, (RI + RO) / 2, centre);
     const t = mk("text", { x: lp.x, y: lp.y + 4, class: "wlabel" + (k.label.length > 10 ? " sm" : ""), fill: inkOn(fill), "text-anchor": "middle" });
@@ -681,7 +757,10 @@ function drawWheel() {
       const dp = polar(C, C, RO - 11, centre);
       g.appendChild(mk("circle", { cx: dp.x, cy: dp.y, r: 2.4, fill: inkOn(fill), "fill-opacity": .6, class: "extdot" }));
     }
-    const go = () => { if (k.kids.length) { path = [...path, k.id]; drawWheel(); } else openSheet(k.id); };
+    const go = () => {
+      if (k.kids.length) { originHint = { angle: centre, dir: 1 }; path = [...path, k.id]; drawWheel(); }
+      else openSheet(k.id);
+    };
     let lp_timer = null, longed = false;
     g.addEventListener("pointerdown", () => {
       longed = false;
@@ -701,7 +780,12 @@ function drawWheel() {
 
   const live = path.length > 0;
   const cur = live ? N.get(path[path.length - 1]) : null;
-  const hub = mk("g", live ? { class: "wedge", role: "button", tabindex: "0", "aria-label": `Log ${cur.label}` } : {});
+  const hub = mk("g", live
+    ? { class: "wedge hub-g", role: "button", tabindex: "0", "aria-label": `Log ${cur.label}` }
+    : { class: "hub-g" });
+  if (animate && live && hint.dir === 1) {
+    hub.classList.add("hub-pop");   // the commit target just changed — say so
+  }
   hub.appendChild(mk("circle", { cx: C, cy: C, r: RH, fill: "var(--hub)", stroke: live ? col(cur.family) : "var(--line)", "stroke-width": live ? 2 : 1 }));
   const w = mk("text", { x: C, y: live ? C - 1 : C + 5, class: "hubw" });
   w.textContent = live ? cur.label : "pick one";
@@ -714,18 +798,38 @@ function drawWheel() {
     hub.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openSheet(cur.id); } });
   }
   wheelEl.appendChild(hub);
+
+  if (animate) {
+    // Two frames: one to commit the start transform, one to release it.
+    wheelEl.classList.add("anim");
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      for (const { g, i } of pending) {
+        g.style.transitionDelay = `${i * 16}ms`;
+        g.classList.remove("enter");
+        g.style.transform = "";
+      }
+    }));
+  } else {
+    wheelEl.classList.remove("anim");
+  }
   drawCrumbs();
 }
 
 function drawCrumbs() {
   crumbEl.replaceChildren();
   const b0 = el("button", "crumb" + (path.length ? "" : " now"), "all");
-  b0.addEventListener("click", () => { path = []; drawWheel(); });
+  b0.addEventListener("click", () => {
+    if (!path.length) return;
+    originHint = { angle: 0, dir: -1 }; path = []; drawWheel();
+  });
   crumbEl.appendChild(b0);
   path.forEach((p, i) => {
     crumbEl.appendChild(el("span", "csep", "›"));
     const b = el("button", "crumb" + (i === path.length - 1 ? " now" : ""), N.get(p).label);
-    b.addEventListener("click", () => { path = path.slice(0, i + 1); drawWheel(); });
+    b.addEventListener("click", () => {
+      if (i === path.length - 1) return;
+      originHint = { angle: 0, dir: -1 }; path = path.slice(0, i + 1); drawWheel();
+    });
     crumbEl.appendChild(b);
   });
 }
@@ -917,6 +1021,7 @@ function byDate() {
   return m;
 }
 
+let monthDraw = true;   // animate spokes only on the first paint of a month
 function drawMonth() {
   const y = view.getFullYear(), mo = view.getMonth();
   document.getElementById("mtitle").textContent = `${MON[mo]} ${y}`;
@@ -932,7 +1037,11 @@ function drawMonth() {
     const es = map.get(key) ?? [];
     const b = el("button", "cell" + (key === todayStr ? " today" : ""));
     b.setAttribute("aria-label", `${d} ${MON[mo]}, ${es.length} ${es.length === 1 ? "entry" : "entries"}`);
-    b.appendChild(glyph(es, 40, key === todayStr ? 0.45 : 0.16));
+    const gl = glyph(es, 40, key === todayStr ? 0.45 : 0.16, monthDraw);
+    if (monthDraw) for (const ln of gl.querySelectorAll("line")) {
+      ln.style.animationDelay = `${d * 9 + Number(ln.style.animationDelay.replace("ms", "") || 0)}ms`;
+    }
+    b.appendChild(gl);
     b.addEventListener("click", () => {
       const t = document.getElementById("tld-" + key);
       document.querySelectorAll(".tlday.hit").forEach((n) => n.classList.remove("hit"));
@@ -951,6 +1060,7 @@ function drawMonth() {
     const a = polar(17, 17, 3.5, ANGLE[f]), b = polar(17, 17, 13, ANGLE[f]);
     k.appendChild(mk("line", { x1: a.x, y1: a.y, x2: b.x, y2: b.y, stroke: col(f), "stroke-width": 2, "stroke-linecap": "round" }));
   }
+  monthDraw = false;
   drawTimeline();
 }
 
@@ -996,8 +1106,8 @@ function drawTimeline() {
     host.appendChild(day);
   }
 }
-document.getElementById("prevm").addEventListener("click", () => { view.setMonth(view.getMonth() - 1); drawMonth(); });
-document.getElementById("nextm").addEventListener("click", () => { view.setMonth(view.getMonth() + 1); drawMonth(); });
+document.getElementById("prevm").addEventListener("click", () => { view.setMonth(view.getMonth() - 1); monthDraw = true; drawMonth(); });
+document.getElementById("nextm").addEventListener("click", () => { view.setMonth(view.getMonth() + 1); monthDraw = true; drawMonth(); });
 
 /* ══ patterns ══════════════════════════════════════════════════════ */
 let RANGE = 30;
@@ -1481,7 +1591,7 @@ document.querySelector(".tabs").addEventListener("click", (e) => {
   document.querySelectorAll(".tabs button").forEach((x) => x.setAttribute("aria-current", String(x === b)));
   document.querySelectorAll(".screen").forEach((s) => s.classList.toggle("on", s.id === "s-" + b.dataset.go));
   window.scrollTo(0, 0);
-  if (b.dataset.go === "month") drawMonth();
+  if (b.dataset.go === "month") { monthDraw = true; drawMonth(); }
   if (b.dataset.go === "pat") drawPatterns();
 });
 
