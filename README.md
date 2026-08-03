@@ -94,6 +94,37 @@ your browser's `localStorage`; the passphrase lives only in memory.
 Sync is last-write-wins per entry on `updatedAt`, and deletes are tombstones so
 they propagate rather than resurrecting from the other device.
 
+### When it backs up
+
+- **On open**, at most once a day.
+- **After each entry**, debounced.
+- **On demand**, via Sync now.
+
+For the daily run to work without retyping anything, the derived key is cached
+on the device after you first unlock. That is not a downgrade: your entries are
+already stored here in plaintext, so the encryption exists to stop the *server*
+reading them, not to defend against someone holding your unlocked phone. The
+passphrase itself is never stored, and signing out erases the cached key.
+
+Supabase access tokens expire hourly, so a once-a-day sync always opens with a
+stale one; a 401 triggers a refresh and one retry before it counts as signed out.
+
+If the network is down or a free-tier project has paused, the sync fails quietly
+and the app carries on — local data never depended on it.
+
+## Backups on this device
+
+Separate from sync, and aimed at a different failure: you.
+
+A snapshot of every entry is taken when you open the app (at most twice a day),
+and **always immediately before anything destructive** — delete-all, an import,
+or restoring another snapshot. Up to 6 are kept, oldest dropped first, bounded by
+a byte budget so they can't exhaust local storage. Restore any of them from
+**Data → Backups**; the restore itself is snapshotted, so it's undoable too.
+
+These live on the device. They survive mistakes, not a deleted app — for that,
+use sync or export.
+
 ## Sources, and what is and isn't cited
 
 - **Rings 1–3** follow Gloria Willcox, "The Feeling Wheel," *Transactional

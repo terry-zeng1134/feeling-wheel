@@ -337,6 +337,15 @@
   .trg { display: flex; flex-direction: column; gap: 7px; }
   .trg .th { display: flex; justify-content: space-between; font-size: 13px; }
   .trg .th .n { font-family: var(--mono); font-size: 10px; color: var(--ink-3); }
+  .bkrow {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 0; border-bottom: 1px solid var(--line-soft);
+  }
+  .bkrow:last-child { border-bottom: 0; }
+  .bkmeta { flex: 1; display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .bkdate { font-size: 13px; font-variant-numeric: tabular-nums; }
+  .bknote { font-family: var(--mono); font-size: 9.5px; color: var(--ink-3); letter-spacing: .04em; }
+
   .empty { color: var(--ink-3); font-size: 13.5px; text-align: center; padding: 26px 8px; }
   .note-s { font-size: 11.5px; color: var(--ink-3); }
   .toast {
@@ -412,6 +421,16 @@
       </div>
       <button class="btn ghost" id="im-btn">Import a JSON backup</button>
       <input type="file" id="im-file" accept="application/json,.json" hidden />
+    </div>
+    <div class="card">
+      <h2>Backups on this device</h2>
+      <p class="note-s" style="margin:0">
+        A snapshot is taken when you open the app, and always before anything
+        destructive — so a mistaken delete or a bad import is undoable. These live
+        on this device: they survive mistakes, not a deleted app. For that, use
+        sync or export.
+      </p>
+      <div id="backups" style="display:flex;flex-direction:column;gap:2px"></div>
     </div>
     <div class="card" id="sync-card"></div>
     <div class="card">
@@ -1324,6 +1343,7 @@ document.getElementById("im-file").addEventListener("change", async (e) => {
     const data = JSON.parse(await f.text());
     const list = Array.isArray(data) ? data : data.entries;
     if (!Array.isArray(list)) throw new Error("shape");
+    snapshot("before-import");
     let added = 0, skipped = 0;
     for (const x of list) {
       if (!x || !x.id || !x.ts || !Array.isArray(x.path)) { skipped++; continue; }
@@ -1332,7 +1352,7 @@ document.getElementById("im-file").addEventListener("change", async (e) => {
       x.deleted ??= false;
       ALL.push(x); added++;
     }
-    save(); refresh(); syncSoon();
+    save(); refresh(); drawBackups(); syncSoon();
     toast(`Added ${added}, skipped ${skipped}`);
   } catch {
     toast("That file couldn't be read. Pick one exported from this app.");
@@ -1340,10 +1360,11 @@ document.getElementById("im-file").addEventListener("change", async (e) => {
   e.target.value = "";
 });
 document.getElementById("wipe").addEventListener("click", () => {
-  if (!confirm(`Delete all ${ENTRIES.length} entries? Export first if you want to keep them. This cannot be undone.`)) return;
+  if (!confirm(`Delete all ${ENTRIES.length} entries? A snapshot is saved first, so you can undo this from Backups.`)) return;
+  snapshot("before-wipe");
   const now = new Date().toISOString();
   for (const e of ALL) { e.deleted = true; e.updatedAt = now; }
-  save(); refresh(); syncSoon(); toast("All entries deleted");
+  save(); refresh(); drawBackups(); syncSoon(); toast("All entries deleted");
 });
 
 /* ══ encrypted sync ═════════════════════════════════════════════════
@@ -1374,13 +1395,40 @@ let syncing = false, syncTimer = null;
 const b64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)));
 const unb64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
 
+const KEY_KEY = "fw.sync.key.v1";
+
 async function deriveKey(passphrase, saltB64) {
   const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(passphrase), "PBKDF2", false, ["deriveKey"]);
   return crypto.subtle.deriveKey(
     { name: "PBKDF2", salt: unb64(saltB64), iterations: 250000, hash: "SHA-256" },
-    base, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]
+    // Extractable so it can be cached on this device — see rememberKey().
+    base, { name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]
   );
 }
+
+/**
+ * Cache the derived key on this device so sync can run on open without
+ * retyping the passphrase.
+ *
+ * This does not weaken the design. Your entries are already stored here in
+ * plaintext; the encryption exists so the *server* cannot read them, not to
+ * defend against someone holding your unlocked phone. Forgetting the key is a
+ * sign-out, and the passphrase itself is never stored.
+ */
+async function rememberKey(key) {
+  try {
+    const raw = await crypto.subtle.exportKey("raw", key);
+    localStorage.setItem(KEY_KEY, b64(raw));
+  } catch {}
+}
+async function recallKey() {
+  const s = localStorage.getItem(KEY_KEY);
+  if (!s) return null;
+  try {
+    return await crypto.subtle.importKey("raw", unb64(s), { name: "AES-GCM" }, true, ["encrypt", "decrypt"]);
+  } catch { return null; }
+}
+const forgetKey = () => localStorage.removeItem(KEY_KEY);
 async function encryptEntry(e) {
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, CRYPTO_KEY, new TextEncoder().encode(JSON.stringify(e)));
@@ -1391,7 +1439,24 @@ async function decryptEntry(row) {
   return JSON.parse(new TextDecoder().decode(pt));
 }
 
-async function sb(pathname, { method = "GET", body, auth = true, headers = {} } = {}) {
+/**
+ * Supabase access tokens last about an hour, so a once-a-day sync always opens
+ * with an expired one. Swap the refresh token for a new session; only a failed
+ * refresh counts as a real sign-out.
+ */
+async function refreshSession() {
+  const sess = sessGet();
+  if (!sess?.refresh_token) return false;
+  try {
+    const out = await sb("/auth/v1/token?grant_type=refresh_token",
+      { method: "POST", body: { refresh_token: sess.refresh_token }, auth: false, noRetry: true });
+    if (!out?.access_token) return false;
+    sessSet({ access_token: out.access_token, refresh_token: out.refresh_token, user: out.user ?? sess.user });
+    return true;
+  } catch { return false; }
+}
+
+async function sb(pathname, { method = "GET", body, auth = true, headers = {}, noRetry = false } = {}) {
   const cfg = cfgGet();
   if (!cfg) throw new Error("Sync isn't set up.");
   const sess = sessGet();
@@ -1400,6 +1465,12 @@ async function sb(pathname, { method = "GET", body, auth = true, headers = {} } 
   const res = await fetch(cfg.url.replace(/\/$/, "") + pathname, {
     method, headers: h, body: body ? JSON.stringify(body) : undefined,
   });
+  if (res.status === 401 && auth && !noRetry) {
+    if (await refreshSession()) {
+      return sb(pathname, { method, body, auth, headers, noRetry: true });
+    }
+    sessSet(null); throw new Error("Signed out — sign in again.");
+  }
   if (res.status === 401 && auth) { sessSet(null); throw new Error("Signed out — sign in again."); }
   if (!res.ok) {
     let msg = `${res.status}`;
@@ -1437,6 +1508,25 @@ async function unlock(passphrase) {
     try { await decryptEntry(probe[0]); }
     catch { CRYPTO_KEY = null; throw new Error("That passphrase doesn't match the data already synced."); }
   }
+  await rememberKey(CRYPTO_KEY);
+}
+
+/* Daily backup: on open, restore the cached key and sync if it's been a day. */
+const DAY = 24 * 3600e3;
+async function autoSyncOnOpen() {
+  if (!cfgGet() || !sessGet()) return;
+  CRYPTO_KEY ??= await recallKey();
+  if (!CRYPTO_KEY) { drawSync(); return; }
+  const last = Number(localStorage.getItem("fw.sync.lastRun") ?? 0);
+  if (Date.now() - last < DAY) { drawSync(); return; }
+  try {
+    const r = await runSync();
+    localStorage.setItem("fw.sync.lastRun", String(Date.now()));
+    if (r && (r.pulled || r.pushed)) toast(`Backed up — ${r.pushed} sent, ${r.pulled} received`);
+  } catch {
+    // Offline or paused project: silent. Local data is unaffected.
+  }
+  drawSync();
 }
 
 async function runSync() {
@@ -1485,7 +1575,9 @@ async function runSync() {
 function syncSoon() {
   if (!CRYPTO_KEY || !cfgGet()) return;
   clearTimeout(syncTimer);
-  syncTimer = setTimeout(() => { runSync().then(drawSync).catch(() => {}); }, 1500);
+  syncTimer = setTimeout(() => {
+    runSync().then(() => { localStorage.setItem("fw.sync.lastRun", String(Date.now())); drawSync(); }).catch(() => {});
+  }, 1500);
 }
 
 /* ── sync UI ───────────────────────────────────────────────────────── */
@@ -1514,11 +1606,12 @@ function drawSync() {
     host.appendChild(b);
   } else {
     const cur = localStorage.getItem(CURSOR_KEY);
-    host.appendChild(el("p", "note-s", `On, as ${sess.user.email}. Last synced ${cur ? new Date(cur).toLocaleString() : "never"}. Entries are encrypted here before they're sent — the server can't read them.`));
+    const lastRun = Number(localStorage.getItem("fw.sync.lastRun") ?? 0);
+    host.appendChild(el("p", "note-s", `On, as ${sess.user.email}. Backs up automatically when you open the app, at most once a day, and after each entry. Last backup ${lastRun ? new Date(lastRun).toLocaleString() : "never"}. Entries are encrypted on this device before they are sent — the server cannot read them.`));
     const now = el("button", "btn ghost", "Sync now");
     now.addEventListener("click", async () => {
       now.textContent = "Syncing…"; now.disabled = true;
-      try { const r = await runSync(); toast(`Pulled ${r.pulled}, pushed ${r.pushed}`); }
+      try { const r = await runSync(); localStorage.setItem("fw.sync.lastRun", String(Date.now())); toast(`Pulled ${r.pulled}, pushed ${r.pushed}`); }
       catch (e) { toast(e.message); }
       now.disabled = false; drawSync();
     });
@@ -1527,7 +1620,7 @@ function drawSync() {
   const out = el("button", "btn ghost", "Sign out of sync");
   out.addEventListener("click", () => {
     if (!confirm("Sign out? Your entries stay on this device.")) return;
-    sessSet(null); CRYPTO_KEY = null; localStorage.removeItem(CURSOR_KEY); drawSync(); toast("Signed out");
+    sessSet(null); CRYPTO_KEY = null; forgetKey(); localStorage.removeItem(CURSOR_KEY); localStorage.removeItem("fw.sync.lastRun"); drawSync(); toast("Signed out");
   });
   host.appendChild(out);
 }
@@ -1594,6 +1687,85 @@ function openSyncSetup(step = 1) {
   c.addEventListener("click", closeSheet);
   box.appendChild(c);
   document.getElementById("sheet").classList.add("on");
+}
+
+/* ══ rolling local snapshots ═══════════════════════════════════════
+   Protects against the failure the sync can't: you, or a bug in this app.
+   A snapshot is taken on open (at most twice a day) and always immediately
+   before anything destructive, so "delete everything" and a bad import are
+   both undoable.
+
+   This is NOT off-device backup — deleting the app takes snapshots with it.
+   For that, turn on sync or export. Both are stated plainly in the UI.
+   ═══════════════════════════════════════════════════════════════════ */
+const SNAP_KEY = "fw.snaps.v1";
+const SNAP_MAX = 6;
+const SNAP_BUDGET = 1_200_000;   // bytes; localStorage is ~5 MB in total
+const SNAP_MIN_GAP = 12 * 3600e3;
+
+const snapsGet = () => { try { return JSON.parse(localStorage.getItem(SNAP_KEY) ?? "[]"); } catch { return []; } };
+
+function snapsPut(list) {
+  // Trim by count, then by byte budget, oldest first, until it fits.
+  let out = list.slice(-SNAP_MAX);
+  const size = (l) => l.reduce((a, s) => a + s.data.length, 0);
+  while (out.length > 1 && size(out) > SNAP_BUDGET) out = out.slice(1);
+  for (;;) {
+    try { localStorage.setItem(SNAP_KEY, JSON.stringify(out)); return out; }
+    catch {
+      if (out.length <= 1) { localStorage.removeItem(SNAP_KEY); return []; }
+      out = out.slice(1);   // quota hit — drop the oldest and retry
+    }
+  }
+}
+
+/** reason: "auto" respects the time gap; anything else always snapshots. */
+function snapshot(reason = "auto") {
+  const list = snapsGet();
+  const last = list[list.length - 1];
+  const data = JSON.stringify(ALL);
+  if (reason === "auto") {
+    if (!ALL.length) return;
+    if (last && Date.now() - new Date(last.at).getTime() < SNAP_MIN_GAP) return;
+    if (last && last.data === data) return;   // nothing changed; don't burn a slot
+  }
+  list.push({ at: new Date().toISOString(), n: ENTRIES.length, reason, data });
+  snapsPut(list);
+}
+
+function restoreSnapshot(at) {
+  const s = snapsGet().find((x) => x.at === at);
+  if (!s) return false;
+  snapshot("before-restore");           // the restore itself is undoable
+  try { ALL = JSON.parse(s.data); } catch { return false; }
+  save(); refresh(); drawBackups(); syncSoon();
+  return true;
+}
+
+function drawBackups() {
+  const host = document.getElementById("backups");
+  if (!host) return;
+  host.replaceChildren();
+  const list = snapsGet().slice().reverse();
+  if (!list.length) {
+    host.appendChild(el("p", "note-s", "No snapshots yet. One is taken when you open the app, and always before anything destructive."));
+    return;
+  }
+  const label = { auto: "automatic", "before-wipe": "before delete-all", "before-import": "before import", "before-restore": "before restore" };
+  for (const s of list) {
+    const row = el("div", "bkrow");
+    const meta = el("div", "bkmeta");
+    meta.appendChild(el("span", "bkdate", new Date(s.at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })));
+    meta.appendChild(el("span", "bknote", `${s.n} ${s.n === 1 ? "entry" : "entries"} · ${label[s.reason] ?? s.reason}`));
+    row.appendChild(meta);
+    const b = el("button", "chip", "Restore");
+    b.addEventListener("click", () => {
+      if (!confirm(`Replace your ${ENTRIES.length} current entries with this snapshot of ${s.n}? A snapshot of right now is saved first, so this is undoable.`)) return;
+      toast(restoreSnapshot(s.at) ? "Restored" : "That snapshot couldn't be read");
+    });
+    row.appendChild(b);
+    host.appendChild(row);
+  }
 }
 
 /* ══ storage durability ════════════════════════════════════════════
@@ -1684,6 +1856,9 @@ function refresh() {
 refresh();
 drawSync();
 drawStorage();
+snapshot("auto");
+drawBackups();
+autoSyncOnOpen();
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", refresh);
 new MutationObserver(refresh).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
 </script>
