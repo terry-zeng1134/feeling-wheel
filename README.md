@@ -123,18 +123,29 @@ manifest.webmanifest    PWA manifest
 sw.js                   offline cache
 supabase-schema.sql     paste into Supabase to enable sync
 tools/build.mjs         app/index.html + document shell → index.html
+tools/deploy.sh         build, commit, push
 tools/make-icons.mjs    generates the icons, no image dependencies
 mockup/index.html       earlier design mockup
 docs/superpowers/       design spec and full implementation plan
 ```
 
-Rebuild after editing the app:
+Edit `app/index.html`, then ship:
+
+```bash
+./tools/deploy.sh "what changed"
+```
+
+That rebuilds `index.html`, commits, and pushes. Pages redeploys automatically
+and the installed app picks up the change next time it opens online — no
+reinstall, and your entries are untouched.
+
+Rebuild without shipping:
 
 ```bash
 node tools/build.mjs
 ```
 
-No build step beyond that, no dependencies, no package.json.
+No dependencies, no package.json, no bundler.
 
 ## Status
 
