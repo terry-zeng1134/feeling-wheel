@@ -1367,29 +1367,49 @@ document.getElementById("wipe").addEventListener("click", () => {
   save(); refresh(); drawBackups(); syncSoon(); toast("All entries deleted");
 });
 
-/* ══ encrypted sync ═════════════════════════════════════════════════
-   Optional. Off unless you configure it.
+/* ══ encrypted sync (Firebase) ═══════════════════════════════════════
+   Optional. Off unless you turn it on.
 
-   The server never sees an entry. Each row is the whole entry JSON encrypted
-   with AES-GCM under a key derived from a passphrase that never leaves this
-   device. Supabase stores { id, user_id, updated_at, deleted, iv, ct } — a
-   timestamp and a blob. Every bit of analysis in this app is client-side, so
-   nothing is lost by making the data opaque to the server.
+   Firestore never sees an entry. Each document is the whole entry JSON
+   encrypted with AES-GCM under a key derived from a passphrase that never
+   leaves this device. Firestore stores { updatedAt, deleted, iv, ct } — a
+   timestamp and a blob. All analysis here is client-side, so nothing is lost
+   by making the data opaque to the server.
 
    Two separate secrets, deliberately:
-     · account password — Supabase sees it, for auth
+     · account password — Firebase sees it, for auth
      · passphrase       — never transmitted; lose it and synced rows are gone
+
+   Documents live at users/{uid}/entries/{id}, so the security rules are pure
+   path matching: you may touch your own subtree and nothing else.
    ═══════════════════════════════════════════════════════════════════ */
+
+/* This project's Firebase, baked in so setup is three fields instead of five.
+   A Firebase apiKey is public by design — Google documents it as safe to ship
+   in client apps. It identifies the project; Security Rules do the protecting.
+   Point these at your own project if you fork this. */
+const DEFAULT_CFG = {
+  apiKey: "",
+  projectId: "",
+};
+
 const CFG_KEY = "fw.sync.cfg.v1";
 const SESS_KEY = "fw.sync.sess.v1";
 const CURSOR_KEY = "fw.sync.cursor.v1";
 
-const cfgGet = () => { try { return JSON.parse(localStorage.getItem(CFG_KEY) ?? "null"); } catch { return null; } };
+/** A stored config wins; otherwise fall back to the baked-in project. */
+const cfgGet = () => {
+  try {
+    const stored = JSON.parse(localStorage.getItem(CFG_KEY) ?? "null");
+    if (stored?.apiKey && stored?.projectId) return stored;
+  } catch {}
+  return DEFAULT_CFG.apiKey ? DEFAULT_CFG : null;
+};
 const cfgSet = (c) => localStorage.setItem(CFG_KEY, JSON.stringify(c));
 const sessGet = () => { try { return JSON.parse(localStorage.getItem(SESS_KEY) ?? "null"); } catch { return null; } };
 const sessSet = (s) => (s ? localStorage.setItem(SESS_KEY, JSON.stringify(s)) : localStorage.removeItem(SESS_KEY));
 
-let CRYPTO_KEY = null;   // in memory only, never persisted
+let CRYPTO_KEY = null;   // derived on unlock, cached on this device
 let syncing = false, syncTimer = null;
 
 const b64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)));
@@ -1412,23 +1432,20 @@ async function deriveKey(passphrase, saltB64) {
  *
  * This does not weaken the design. Your entries are already stored here in
  * plaintext; the encryption exists so the *server* cannot read them, not to
- * defend against someone holding your unlocked phone. Forgetting the key is a
- * sign-out, and the passphrase itself is never stored.
+ * defend against someone holding your unlocked phone. Signing out forgets the
+ * key, and the passphrase itself is never stored.
  */
 async function rememberKey(key) {
-  try {
-    const raw = await crypto.subtle.exportKey("raw", key);
-    localStorage.setItem(KEY_KEY, b64(raw));
-  } catch {}
+  try { localStorage.setItem(KEY_KEY, b64(await crypto.subtle.exportKey("raw", key))); } catch {}
 }
 async function recallKey() {
   const s = localStorage.getItem(KEY_KEY);
   if (!s) return null;
-  try {
-    return await crypto.subtle.importKey("raw", unb64(s), { name: "AES-GCM" }, true, ["encrypt", "decrypt"]);
-  } catch { return null; }
+  try { return await crypto.subtle.importKey("raw", unb64(s), { name: "AES-GCM" }, true, ["encrypt", "decrypt"]); }
+  catch { return null; }
 }
 const forgetKey = () => localStorage.removeItem(KEY_KEY);
+
 async function encryptEntry(e) {
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, CRYPTO_KEY, new TextEncoder().encode(JSON.stringify(e)));
@@ -1439,66 +1456,119 @@ async function decryptEntry(row) {
   return JSON.parse(new TextDecoder().decode(pt));
 }
 
+/* ── Firebase REST ─────────────────────────────────────────────────── */
+// Overridable so the local mock can stand in for Google's endpoints.
+const FB_HOSTS = {
+  identity: "https://identitytoolkit.googleapis.com/v1",
+  token: "https://securetoken.googleapis.com/v1",
+  firestore: "https://firestore.googleapis.com/v1",
+};
+
+/** Firestore's typed value format. Only the two types this app stores. */
+const fvS = (v) => ({ stringValue: String(v) });
+const fvB = (v) => ({ booleanValue: !!v });
+const unfield = (fields) => {
+  const out = {};
+  for (const [k, v] of Object.entries(fields ?? {})) {
+    out[k] = "stringValue" in v ? v.stringValue : "booleanValue" in v ? v.booleanValue : null;
+  }
+  return out;
+};
+
+const AUTH_MSG = {
+  EMAIL_EXISTS: "That email already has an account — sign in instead.",
+  INVALID_LOGIN_CREDENTIALS: "Wrong email or password.",
+  INVALID_PASSWORD: "Wrong email or password.",
+  EMAIL_NOT_FOUND: "No account with that email.",
+  WEAK_PASSWORD: "Password must be at least 6 characters.",
+  INVALID_EMAIL: "That doesn't look like an email address.",
+  MISSING_PASSWORD: "A password is required.",
+  TOO_MANY_ATTEMPTS_TRY_LATER: "Too many attempts. Wait a minute and try again.",
+};
+
+async function fbJson(url, { method = "GET", body, token, form } = {}) {
+  const headers = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+  headers["Content-Type"] = form ? "application/x-www-form-urlencoded" : "application/json";
+  const res = await fetch(url, {
+    method,
+    headers,
+    body: body === undefined ? undefined : (form ? new URLSearchParams(body).toString() : JSON.stringify(body)),
+  });
+  const text = await res.text();
+  const data = text ? JSON.parse(text) : null;
+  if (!res.ok) {
+    const raw = data?.error?.message ?? String(res.status);
+    const err = new Error(AUTH_MSG[raw.split(" ")[0]] ?? raw);
+    err.status = res.status;
+    err.code = raw;
+    throw err;
+  }
+  return data;
+}
+
 /**
- * Supabase access tokens last about an hour, so a once-a-day sync always opens
- * with an expired one. Swap the refresh token for a new session; only a failed
- * refresh counts as a real sign-out.
+ * Firebase ID tokens last an hour, so a once-a-day sync always opens with an
+ * expired one. Trade the refresh token for a new one; only a failed refresh
+ * counts as a real sign-out.
  */
 async function refreshSession() {
-  const sess = sessGet();
-  if (!sess?.refresh_token) return false;
+  const cfg = cfgGet(), sess = sessGet();
+  if (!cfg || !sess?.refresh_token) return false;
   try {
-    const out = await sb("/auth/v1/token?grant_type=refresh_token",
-      { method: "POST", body: { refresh_token: sess.refresh_token }, auth: false, noRetry: true });
-    if (!out?.access_token) return false;
-    sessSet({ access_token: out.access_token, refresh_token: out.refresh_token, user: out.user ?? sess.user });
+    const out = await fbJson(`${FB_HOSTS.token}/token?key=${encodeURIComponent(cfg.apiKey)}`, {
+      method: "POST", form: true,
+      body: { grant_type: "refresh_token", refresh_token: sess.refresh_token },
+    });
+    if (!out?.id_token) return false;
+    sessSet({ ...sess, id_token: out.id_token, refresh_token: out.refresh_token ?? sess.refresh_token, uid: out.user_id ?? sess.uid });
     return true;
   } catch { return false; }
 }
 
-async function sb(pathname, { method = "GET", body, auth = true, headers = {}, noRetry = false } = {}) {
+/** Any Firestore call, with one automatic token refresh on an auth failure. */
+async function fs(path, { method = "GET", body, noRetry = false } = {}) {
   const cfg = cfgGet();
   if (!cfg) throw new Error("Sync isn't set up.");
   const sess = sessGet();
-  const h = { apikey: cfg.anon, "Content-Type": "application/json", ...headers };
-  if (auth && sess) h.Authorization = `Bearer ${sess.access_token}`;
-  const res = await fetch(cfg.url.replace(/\/$/, "") + pathname, {
-    method, headers: h, body: body ? JSON.stringify(body) : undefined,
-  });
-  if (res.status === 401 && auth && !noRetry) {
-    if (await refreshSession()) {
-      return sb(pathname, { method, body, auth, headers, noRetry: true });
+  if (!sess) throw new Error("Signed out — sign in again.");
+  const url = `${FB_HOSTS.firestore}/projects/${cfg.projectId}/databases/(default)/documents${path}`;
+  try {
+    return await fbJson(url, { method, body, token: sess.id_token });
+  } catch (e) {
+    if ((e.status === 401 || e.status === 403) && !noRetry) {
+      if (await refreshSession()) return fs(path, { method, body, noRetry: true });
+      sessSet(null);
+      throw new Error("Signed out — sign in again.");
     }
-    sessSet(null); throw new Error("Signed out — sign in again.");
+    throw e;
   }
-  if (res.status === 401 && auth) { sessSet(null); throw new Error("Signed out — sign in again."); }
-  if (!res.ok) {
-    let msg = `${res.status}`;
-    try { const j = await res.json(); msg = j.msg || j.message || j.error_description || j.hint || msg; } catch {}
-    throw new Error(msg);
-  }
-  // PostgREST answers `Prefer: return=minimal` with 201 and an empty body, not
-  // 204 — so decide by whether there is a body, never by the status code.
-  const text = await res.text();
-  return text ? JSON.parse(text) : null;
 }
 
 async function signIn(email, password, mode) {
-  const path = mode === "up" ? "/auth/v1/signup" : "/auth/v1/token?grant_type=password";
-  const out = await sb(path, { method: "POST", body: { email, password }, auth: false });
-  if (!out.access_token) throw new Error("Check your email to confirm the account, then sign in.");
-  sessSet({ access_token: out.access_token, refresh_token: out.refresh_token, user: out.user });
+  const cfg = cfgGet();
+  if (!cfg) throw new Error("Sync isn't set up.");
+  const ep = mode === "up" ? "accounts:signUp" : "accounts:signInWithPassword";
+  const out = await fbJson(`${FB_HOSTS.identity}/${ep}?key=${encodeURIComponent(cfg.apiKey)}`, {
+    method: "POST", body: { email, password, returnSecureToken: true },
+  });
+  sessSet({ id_token: out.idToken, refresh_token: out.refreshToken, uid: out.localId, email });
   return out;
 }
 
+const docBase = () => `/users/${sessGet().uid}`;
+
 /** Salt lives server-side (it isn't secret) so a second device derives the same key. */
 async function getOrCreateSalt() {
-  const rows = await sb("/rest/v1/sync_meta?select=salt&limit=1");
-  if (rows.length) return rows[0].salt;
+  try {
+    const doc = await fs(`${docBase()}/meta/sync`);
+    const salt = unfield(doc.fields).salt;
+    if (salt) return salt;
+  } catch (e) {
+    if (e.status !== 404 && !/NOT_FOUND/i.test(e.code ?? "")) throw e;
+  }
   const salt = b64(crypto.getRandomValues(new Uint8Array(16)));
-  const sess = sessGet();
-  await sb("/rest/v1/sync_meta", { method: "POST", body: { user_id: sess.user.id, salt },
-    headers: { Prefer: "return=minimal" } });
+  await fs(`${docBase()}/meta/sync`, { method: "PATCH", body: { fields: { salt: fvS(salt) } } });
   return salt;
 }
 
@@ -1506,9 +1576,10 @@ async function unlock(passphrase) {
   const salt = await getOrCreateSalt();
   CRYPTO_KEY = await deriveKey(passphrase, salt);
   // Verify against an existing row so a typo fails now, not silently later.
-  const probe = await sb("/rest/v1/entries?select=iv,ct&limit=1");
-  if (probe.length) {
-    try { await decryptEntry(probe[0]); }
+  const probe = await fs(`${docBase()}/entries?pageSize=1`);
+  const first = (probe.documents ?? [])[0];
+  if (first) {
+    try { await decryptEntry(unfield(first.fields)); }
     catch { CRYPTO_KEY = null; throw new Error("That passphrase doesn't match the data already synced."); }
   }
   await rememberKey(CRYPTO_KEY);
@@ -1532,7 +1603,7 @@ async function autoSyncOnOpen() {
     localStorage.setItem("fw.sync.lastRun", String(Date.now()));
     if (r && (r.pulled || r.pushed)) toast(`Backed up — ${r.pushed} sent, ${r.pulled} received`);
   } catch {
-    // Offline or paused project: silent. Local data is unaffected.
+    // Offline, or rules/auth trouble: silent. Local data is unaffected.
   }
   drawSync();
 }
@@ -1546,33 +1617,44 @@ async function runSync() {
     const cursor = ALL.length ? localStorage.getItem(CURSOR_KEY) : null;
     const since = cursor ?? "1970-01-01T00:00:00Z";
     const started = new Date().toISOString();
+    const uid = sessGet().uid;
 
-    // Pull first, so a local edit made during the round trip wins on the next pass.
-    const remote = await sb(`/rest/v1/entries?select=id,updated_at,deleted,iv,ct&updated_at=gt.${encodeURIComponent(since)}`);
+    // Pull first, so a local edit made during the round trip wins next pass.
+    const q = await fs(`${docBase()}:runQuery`, {
+      method: "POST",
+      body: {
+        structuredQuery: {
+          from: [{ collectionId: "entries" }],
+          where: { fieldFilter: { field: { fieldPath: "updatedAt" }, op: "GREATER_THAN", value: fvS(since) } },
+        },
+      },
+    });
     let pulled = 0;
-    for (const row of remote) {
+    for (const row of q ?? []) {
+      if (!row.document) continue;              // runQuery emits a readTime-only row
+      const f = unfield(row.document.fields);
       let entry;
-      try { entry = await decryptEntry(row); }
-      catch { continue; }   // not ours to read; leave it alone
-      entry.deleted = row.deleted;
-      entry.updatedAt = row.updated_at;
+      try { entry = await decryptEntry(f); }
+      catch { continue; }                       // not ours to read; leave it alone
+      entry.deleted = !!f.deleted;
+      entry.updatedAt = f.updatedAt;
       const i = ALL.findIndex((e) => e.id === entry.id);
       if (i === -1) { ALL.push(entry); pulled++; }
-      else if (row.updated_at > (ALL[i].updatedAt ?? "")) { ALL[i] = entry; pulled++; }
+      else if (f.updatedAt > (ALL[i].updatedAt ?? "")) { ALL[i] = entry; pulled++; }
     }
 
-    // Push anything newer than the cursor.
+    // Push anything newer than the cursor, in batched commits.
     const mine = ALL.filter((e) => (e.updatedAt ?? e.ts) > since);
     if (mine.length) {
-      const sess = sessGet();
-      const rows = [];
+      const prefix = `projects/${cfgGet().projectId}/databases/(default)/documents/users/${uid}/entries`;
+      const writes = [];
       for (const e of mine) {
         const { iv, ct } = await encryptEntry(e);
-        rows.push({ id: e.id, user_id: sess.user.id, updated_at: e.updatedAt ?? e.ts, deleted: !!e.deleted, iv, ct });
+        writes.push({ update: { name: `${prefix}/${e.id}`,
+          fields: { updatedAt: fvS(e.updatedAt ?? e.ts), deleted: fvB(e.deleted), iv: fvS(iv), ct: fvS(ct) } } });
       }
-      for (let i = 0; i < rows.length; i += 100) {
-        await sb("/rest/v1/entries", { method: "POST", body: rows.slice(i, i + 100),
-          headers: { Prefer: "resolution=merge-duplicates,return=minimal" } });
+      for (let i = 0; i < writes.length; i += 100) {
+        await fs(":commit", { method: "POST", body: { writes: writes.slice(i, i + 100) } });
       }
     }
 
@@ -1598,32 +1680,29 @@ function drawSync() {
   const cfg = cfgGet(), sess = sessGet();
   host.appendChild(el("h2", null, "Sync across devices"));
 
-  if (!cfg) {
-    host.appendChild(el("p", "note-s", "Off. Everything stays on this device. Turn it on to reach your entries from a laptop and to have a backup that survives a cleared browser."));
-    const setup = el("button", "btn ghost", "Set up sync");
-    setup.addEventListener("click", () => openSyncSetup());
+  if (!cfg || !sess) {
+    host.appendChild(el("p", "note-s", "Off. Everything stays on this device. Turn it on for a backup that survives a lost phone, and to reach your entries from a laptop."));
+    const setup = el("button", "btn ghost", "Turn on sync");
+    setup.addEventListener("click", () => openSyncSetup(1));
     host.appendChild(setup);
     return;
   }
-  if (!sess) {
-    host.appendChild(el("p", "note-s", "Configured, but signed out."));
-    const b = el("button", "btn ghost", "Sign in");
-    b.addEventListener("click", () => openSyncSetup(2));
-    host.appendChild(b);
-  } else if (!CRYPTO_KEY) {
-    host.appendChild(el("p", "note-s", `Signed in as ${sess.user.email}. Enter your passphrase to unlock and sync.`));
+  if (!CRYPTO_KEY) {
+    host.appendChild(el("p", "note-s", `Signed in as ${sess.email}. Enter your passphrase to unlock and sync.`));
     const b = el("button", "btn ghost", "Unlock");
     b.addEventListener("click", () => openSyncSetup(3));
     host.appendChild(b);
   } else {
-    const cur = localStorage.getItem(CURSOR_KEY);
     const lastRun = Number(localStorage.getItem("fw.sync.lastRun") ?? 0);
-    host.appendChild(el("p", "note-s", `On, as ${sess.user.email}. Backs up automatically when you open the app, at most once a day, and after each entry. Last backup ${lastRun ? new Date(lastRun).toLocaleString() : "never"}. Entries are encrypted on this device before they are sent — the server cannot read them.`));
+    host.appendChild(el("p", "note-s", `On, as ${sess.email}. Backs up automatically when you open the app, at most once a day, and after each entry. Last backup ${lastRun ? new Date(lastRun).toLocaleString() : "never"}. Entries are encrypted on this device before they are sent — the server cannot read them.`));
     const now = el("button", "btn ghost", "Sync now");
     now.addEventListener("click", async () => {
       now.textContent = "Syncing…"; now.disabled = true;
-      try { const r = await runSync(); localStorage.setItem("fw.sync.lastRun", String(Date.now())); toast(`Pulled ${r.pulled}, pushed ${r.pushed}`); }
-      catch (e) { toast(e.message); }
+      try {
+        const r = await runSync();
+        localStorage.setItem("fw.sync.lastRun", String(Date.now()));
+        toast(`Pulled ${r.pulled}, pushed ${r.pushed}`);
+      } catch (e) { toast(e.message); }
       now.disabled = false; drawSync();
     });
     host.appendChild(now);
@@ -1631,17 +1710,19 @@ function drawSync() {
   const out = el("button", "btn ghost", "Sign out of sync");
   out.addEventListener("click", () => {
     if (!confirm("Sign out? Your entries stay on this device.")) return;
-    sessSet(null); CRYPTO_KEY = null; forgetKey(); localStorage.removeItem(CURSOR_KEY); localStorage.removeItem("fw.sync.lastRun"); drawSync(); toast("Signed out");
+    sessSet(null); CRYPTO_KEY = null; forgetKey();
+    localStorage.removeItem(CURSOR_KEY); localStorage.removeItem("fw.sync.lastRun");
+    drawSync(); toast("Signed out");
   });
   host.appendChild(out);
 }
 
 function openSyncSetup(step = 1) {
   const box = document.getElementById("sheet-in");
-  const cfg = cfgGet() ?? { url: "", anon: "" };
+  const cfg = cfgGet() ?? { apiKey: "", projectId: "" };
   box.replaceChildren();
   box.appendChild(el("div", "grab"));
-  box.appendChild(el("div", "picked-w", step === 3 ? "Unlock" : step === 2 ? "Sign in" : "Set up sync"));
+  box.appendChild(el("div", "picked-w", step === 3 ? "Unlock" : step === 2 ? "Sign in" : "Turn on sync"));
 
   const mkField = (label, value, ph, type = "text") => {
     box.appendChild(el("div", "lbl", label));
@@ -1652,14 +1733,19 @@ function openSyncSetup(step = 1) {
     return i;
   };
 
-  let url, anon, email, pass, phrase;
+  let apiKey, projectId, email, pass, phrase;
+  const baked = !!DEFAULT_CFG.apiKey;
   if (step === 1) {
-    box.appendChild(el("p", "note-s", "Create a free Supabase project, run the SQL from the README, then paste its URL and anon key here. The anon key is designed to be public — row-level security is what protects your rows."));
-    url = mkField("Project URL", cfg.url, "https://xxxx.supabase.co");
-    anon = mkField("Anon key", cfg.anon, "eyJhbGciOi…");
+    if (baked) {
+      box.appendChild(el("p", "note-s", "Pick an account and a passphrase. The server is already configured."));
+    } else {
+      box.appendChild(el("p", "note-s", "Create a free Firebase project with Firestore and email sign-in, then paste its Web API key and project ID here. The API key is public by design — Security Rules are what protect your data."));
+      apiKey = mkField("Web API key", cfg.apiKey, "AIza…");
+      projectId = mkField("Project ID", cfg.projectId, "my-project-1234");
+    }
   }
   if (step <= 2) {
-    email = mkField("Email", sessGet()?.user?.email, "you@example.com", "email");
+    email = mkField("Email", sessGet()?.email, "you@example.com", "email");
     pass = mkField("Account password", "", "at least 6 characters", "password");
   }
   phrase = mkField("Encryption passphrase", "", "never sent anywhere", "password");
@@ -1668,20 +1754,22 @@ function openSyncSetup(step = 1) {
   const err = el("p", "note-s"); err.style.color = "var(--mad)";
   box.appendChild(err);
 
-  const go = el("btn" === "" ? "button" : "button", "btn", step === 3 ? "Unlock" : step === 2 ? "Sign in" : "Create account and sync");
+  const go = el("button", "btn", step === 3 ? "Unlock" : step === 2 ? "Sign in" : "Create account and sync");
   go.addEventListener("click", async () => {
     err.textContent = ""; go.disabled = true; go.textContent = "Working…";
     try {
       if (!phrase.value.trim()) throw new Error("A passphrase is required.");
-      if (step === 1) {
-        if (!url.value.trim() || !anon.value.trim()) throw new Error("Project URL and anon key are both required.");
-        cfgSet({ url: url.value.trim(), anon: anon.value.trim() });
+      if (step === 1 && !baked) {
+        if (!apiKey.value.trim() || !projectId.value.trim()) throw new Error("API key and project ID are both required.");
+        cfgSet({ apiKey: apiKey.value.trim(), projectId: projectId.value.trim() });
       }
       if (step <= 2) {
         try { await signIn(email.value.trim(), pass.value, "in"); }
         catch (e) {
-          if (step === 1) await signIn(email.value.trim(), pass.value, "up");
-          else throw e;
+          // First run: no account yet. Any other failure is a real failure.
+          if (step === 1 && /Wrong email or password|No account/.test(e.message)) {
+            await signIn(email.value.trim(), pass.value, "up");
+          } else throw e;
         }
       }
       await unlock(phrase.value);
@@ -1700,7 +1788,6 @@ function openSyncSetup(step = 1) {
   box.appendChild(c);
   document.getElementById("sheet").classList.add("on");
 }
-
 /* ══ rolling local snapshots ═══════════════════════════════════════
    Protects against the failure the sync can't: you, or a bug in this app.
    A snapshot is taken on open (at most twice a day) and always immediately

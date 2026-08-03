@@ -57,10 +57,12 @@ target of 8.0, normal-vision ΔE 19.3 against a floor of 15.0, in both themes.
 ## Optional: encrypted sync
 
 Off by default. Turn it on if you want your entries on more than one device, or
-a backup that survives a cleared browser.
+a backup that survives a cleared browser. Backed by **Firebase** (Firestore +
+email auth) — chosen over Supabase because its free tier does not pause after a
+week of inactivity, which a journal will absolutely hit.
 
-The server stores `{ id, user_id, updated_at, deleted, iv, ct }` — a timestamp
-and a blob. The entry itself is AES-GCM encrypted in your browser under a key
+Firestore stores `{ updatedAt, deleted, iv, ct }` at `users/{uid}/entries/{id}` —
+a timestamp and a blob. The entry itself is AES-GCM encrypted in your browser under a key
 derived (PBKDF2-SHA256, 250k iterations) from a passphrase **that is never
 transmitted**. Every bit of analysis in this app is client-side, so making the
 data opaque to the server costs nothing.
@@ -78,15 +80,19 @@ write it down.
 
 ### Setting it up
 
-1. Create a free project at [supabase.com](https://supabase.com).
-2. SQL Editor → New query → paste all of [`supabase-schema.sql`](supabase-schema.sql) → Run.
-3. In the app: **Data → Set up sync**. Paste the project URL and anon key from
-   Settings → API, pick an account email/password, and choose a passphrase.
+1. Create a project at [console.firebase.google.com](https://console.firebase.google.com) (Spark plan, no card).
+2. **Build → Firestore Database → Create database** (production mode is fine).
+3. **Firestore → Rules** → paste [`firestore.rules`](firestore.rules) → Publish.
+4. **Build → Authentication → Get started → Email/Password → Enable.**
+5. **Project settings (gear) → General → Your apps → Web app** → copy the
+   `apiKey` and `projectId`.
+6. In the app: **Data → Turn on sync**, paste those two, pick an account
+   email/password, and choose a passphrase.
 
-The anon key is *designed* to be public — it identifies the project, your JWT
-identifies you, and the row-level security policies in the schema restrict every
-query to your own rows. That auth model is why this uses Supabase rather than a
-plain database: a client-only app with no backend cannot hold a real secret.
+The Web API key is *public by design* — Google documents it as safe to ship in
+client apps. It identifies the project; the Security Rules do the protecting. A
+client-only app with no backend cannot hold a real secret, so authority comes
+from your signed-in identity, not from hiding a string.
 
 Nothing sync-related is stored in this repo. Your URL, key, and session live in
 your browser's `localStorage`; the passphrase lives only in memory.
@@ -114,17 +120,21 @@ and the app carries on — local data never depended on it.
 
 ### Testing sync without a real project
 
-`tools/mock-supabase.mjs` is a stand-in that speaks the same REST dialect —
-GoTrue auth plus PostgREST — so the sync layer can be driven end to end locally:
+`tools/mock-firebase.mjs` stands in for Google's endpoints — Identity Toolkit,
+the secure-token refresh endpoint, and Firestore's typed-document REST API — so
+the sync layer can be driven end to end locally:
 
 ```bash
-node tools/mock-supabase.mjs 8791     # prints the anon key to use
-python3 -m http.server 8739           # serve the app
+node tools/mock-firebase.mjs 8792     # prints the apiKey and projectId to use
+python3 -m http.server 8741
 ```
 
-Then set the project URL to `http://localhost:8791` in Data → Set up sync. It
-found two real bugs that a live project would only have surfaced at the worst
-possible moment.
+Point `FB_HOSTS` at `http://localhost:8792` in a scratch copy of the built page,
+then run setup against it. This harness caught two real bugs in the Supabase
+version that a live project would only have surfaced at the worst moment, so it
+is worth keeping.
+
+`tools/mock-supabase.mjs` remains for the previous backend.
 
 ## Backups on this device
 
@@ -166,7 +176,8 @@ index.html              built, hosted page — do not edit directly
 app/index.html          the app itself; edit this
 manifest.webmanifest    PWA manifest
 sw.js                   offline cache
-supabase-schema.sql     paste into Supabase to enable sync
+firestore.rules         paste into Firebase to enable sync
+supabase-schema.sql     previous backend, kept for reference
 tools/build.mjs         app/index.html + document shell → index.html
 tools/deploy.sh         build, commit, push
 tools/make-icons.mjs    generates the icons, no image dependencies

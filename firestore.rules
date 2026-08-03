@@ -1,0 +1,25 @@
+// Feeling Wheel — Firestore Security Rules
+//
+// Paste into: Firebase console → Firestore Database → Rules → Publish.
+//
+// Entries live at users/{uid}/entries/{id} and the salt at users/{uid}/meta/sync,
+// so authorisation is pure path matching: you may touch your own subtree and
+// nothing else. Default deny covers everything not named here.
+//
+// What Firestore can see even when the rules allow it: a timestamp, a deleted
+// flag, and an opaque blob. Entries are AES-GCM encrypted in the browser under
+// a passphrase that is never transmitted.
+
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Your own subtree, and only while signed in.
+    match /users/{uid}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // Everything else is denied. No rule means no access.
+  }
+}
