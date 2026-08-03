@@ -1477,7 +1477,10 @@ async function sb(pathname, { method = "GET", body, auth = true, headers = {}, n
     try { const j = await res.json(); msg = j.msg || j.message || j.error_description || j.hint || msg; } catch {}
     throw new Error(msg);
   }
-  return res.status === 204 ? null : res.json();
+  // PostgREST answers `Prefer: return=minimal` with 201 and an empty body, not
+  // 204 — so decide by whether there is a body, never by the status code.
+  const text = await res.text();
+  return text ? JSON.parse(text) : null;
 }
 
 async function signIn(email, password, mode) {
@@ -1509,6 +1512,11 @@ async function unlock(passphrase) {
     catch { CRYPTO_KEY = null; throw new Error("That passphrase doesn't match the data already synced."); }
   }
   await rememberKey(CRYPTO_KEY);
+  // Unlocking means a new or restored device. The cursor is an optimisation
+  // that assumes local data was never lost; here it may be a lie, so force the
+  // next sync to be a full pull. Without this, restoring an empty phone asks
+  // for "everything since last time" and is handed nothing.
+  localStorage.removeItem(CURSOR_KEY);
 }
 
 /* Daily backup: on open, restore the cached key and sync if it's been a day. */
@@ -1533,7 +1541,10 @@ async function runSync() {
   if (syncing || !CRYPTO_KEY || !sessGet()) return;
   syncing = true;
   try {
-    const since = localStorage.getItem(CURSOR_KEY) ?? "1970-01-01T00:00:00Z";
+    // A cursor with nothing local behind it can only mean the local copy was
+    // lost. Ignore it and pull everything, rather than trusting a stale mark.
+    const cursor = ALL.length ? localStorage.getItem(CURSOR_KEY) : null;
+    const since = cursor ?? "1970-01-01T00:00:00Z";
     const started = new Date().toISOString();
 
     // Pull first, so a local edit made during the round trip wins on the next pass.
@@ -1675,6 +1686,7 @@ function openSyncSetup(step = 1) {
       }
       await unlock(phrase.value);
       const r = await runSync();
+      localStorage.setItem("fw.sync.lastRun", String(Date.now()));
       closeSheet(); drawSync();
       toast(`Sync on — pulled ${r.pulled}, pushed ${r.pushed}`);
     } catch (e) {

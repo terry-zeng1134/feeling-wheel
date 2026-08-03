@@ -112,6 +112,20 @@ stale one; a 401 triggers a refresh and one retry before it counts as signed out
 If the network is down or a free-tier project has paused, the sync fails quietly
 and the app carries on — local data never depended on it.
 
+### Testing sync without a real project
+
+`tools/mock-supabase.mjs` is a stand-in that speaks the same REST dialect —
+GoTrue auth plus PostgREST — so the sync layer can be driven end to end locally:
+
+```bash
+node tools/mock-supabase.mjs 8791     # prints the anon key to use
+python3 -m http.server 8739           # serve the app
+```
+
+Then set the project URL to `http://localhost:8791` in Data → Set up sync. It
+found two real bugs that a live project would only have surfaced at the worst
+possible moment.
+
 ## Backups on this device
 
 Separate from sync, and aimed at a different failure: you.
