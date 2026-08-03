@@ -147,6 +147,30 @@
   }
   .extdot { pointer-events: none; }
 
+  /* Definitions for the words currently on the wheel, once you're deep enough
+     that the choice is between near-neighbours. */
+  #leafdefs { display: flex; flex-direction: column; gap: 7px; }
+  #leafdefs:empty { display: none; }
+  .ld {
+    width: 100%; text-align: left; cursor: pointer;
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 10px 12px; display: flex; flex-direction: column; gap: 4px;
+    border-left-width: 3px;
+  }
+  .ld:active { background: var(--card-2); }
+  .ld-top { display: flex; align-items: baseline; gap: 7px; }
+  .ld-w { font-size: 15px; font-weight: 650; letter-spacing: -.01em; }
+  .ld-ext {
+    font-family: var(--mono); font-size: 8.5px; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--ink-3);
+    border: 1px solid var(--line); border-radius: 4px; padding: 1px 4px;
+  }
+  .ld-go { margin-left: auto; font-family: var(--mono); font-size: 9px; color: var(--ink-3); letter-spacing: .1em; }
+  .ld-g { font-size: 13px; color: var(--ink-2); line-height: 1.45; }
+  .ld-vs { font-size: 12px; color: var(--ink-3); line-height: 1.45; }
+  .ld-vs b { color: var(--ink-2); font-weight: 600; }
+  .ld-src { font-family: var(--mono); font-size: 8.5px; color: var(--ink-3); letter-spacing: .06em; }
+
   .crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; min-height: 26px; }
   .crumb {
     background: none; border: 0; padding: 3px 7px; border-radius: 7px;
@@ -337,7 +361,8 @@
     </div>
     <nav class="crumbs" id="crumbs" aria-label="Position in the wheel"></nav>
     <div class="wheelwrap"><svg class="wheel" id="wheel" viewBox="0 0 330 330" aria-label="Feeling wheel"></svg></div>
-    <p class="note-s">Tap a wedge to go deeper · tap the middle to log where you are · long-press for a definition</p>
+    <div id="leafdefs"></div>
+    <p class="note-s" id="wheel-hint">Tap a wedge to go deeper · tap the middle to log where you are · long-press for a definition</p>
   </section>
 
   <!-- ── MONTH ───────────────────────────────── -->
@@ -741,7 +766,9 @@ function drawWheel() {
       // Ascending: no rotation, just settle inward — reads as pulling back out.
       // Wrap to [-180, 180] so each wedge takes the short way round; the raw
       // difference sends some of them two-thirds of the way around the circle.
-      const raw = hint.dir === 1 ? hint.angle - centre : 0;
+      // angle may be null (descended from a definition card, not a wedge) —
+      // then there is no origin to unfold from, so scale in without rotating.
+      const raw = hint.dir === 1 && hint.angle != null ? hint.angle - centre : 0;
       const delta = ((raw % 360) + 540) % 360 - 180;
       const scale = hint.dir === 1 ? 0.52 : 1.42;
       g.classList.add("enter");
@@ -813,6 +840,57 @@ function drawWheel() {
     wheelEl.classList.remove("anim");
   }
   drawCrumbs();
+  drawLeafDefs(kids);
+}
+
+/**
+ * Definitions for the words currently on the wheel — shown from ring 3 down,
+ * where the choice is between near-neighbours and the wording is the whole
+ * decision. Above that the words are self-evident and this stays hidden.
+ */
+function drawLeafDefs(kids) {
+  const host = document.getElementById("leafdefs");
+  const hint = document.getElementById("wheel-hint");
+  host.replaceChildren();
+
+  const defined = kids.filter((k) => k.ring >= 3 && k.gloss);
+  if (!defined.length) {
+    hint.textContent = "Tap a wedge to go deeper · tap the middle to log where you are · long-press for a definition";
+    return;
+  }
+  hint.textContent = "Tap a card or its wedge to log it.";
+
+  for (const k of defined) {
+    const card = el("button", "ld");
+    card.type = "button";
+    card.style.borderLeftColor = col(k.family);
+
+    const top = el("div", "ld-top");
+    const w = el("span", "ld-w", k.label);
+    w.style.color = col(k.family);
+    top.appendChild(w);
+    if (k.ext) top.appendChild(el("span", "ld-ext", "ext."));
+    top.appendChild(el("span", "ld-go", k.kids.length ? "open ›" : "log ›"));
+    card.appendChild(top);
+
+    card.appendChild(el("div", "ld-g", k.gloss));
+
+    // The contrast is the point: what makes this word not the one beside it.
+    if (k.diff) {
+      const other = k.ring === 4 ? N.get(k.parent) : (kids.find((x) => x.id !== k.id) ?? null);
+      const vs = el("div", "ld-vs");
+      vs.append(el("b", null, `vs ${other ? other.label : "the others"}`),
+                document.createTextNode(" — " + k.diff));
+      card.appendChild(vs);
+    }
+    card.appendChild(el("div", "ld-src", k.ext ? `${k.src} · extension` : k.src));
+
+    card.addEventListener("click", () => {
+      if (k.kids.length) { originHint = { angle: null, dir: 1 }; path = [...path, k.id]; drawWheel(); }
+      else openSheet(k.id);
+    });
+    host.appendChild(card);
+  }
 }
 
 function drawCrumbs() {
